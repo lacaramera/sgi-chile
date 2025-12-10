@@ -1,0 +1,176 @@
+﻿{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Iniciar sesión — SGI Chile</title>
+
+  <!-- Tailwind CDN (rápido para prototipo) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    /* Estilos puntuales para inputs dentro del panel izquierdo */
+    .login-left input[type="text"],
+    .login-left input[type="password"] {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.25);
+      color: #ffffff;
+      outline: none;
+      font-size: 1rem;
+      box-sizing: border-box;
+    }
+
+    .login-left label {
+      color: rgba(255,255,255,0.85);
+      font-size: 0.95rem;
+      display:block;
+      margin-bottom: 0.4rem;
+    }
+
+    .login-left .input-wrapper {
+      position: relative;
+    }
+
+    .login-left .eye-btn {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(255,255,255,0.06);
+      border-radius: 999px;
+      width: 36px;
+      height: 36px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    /* Estética botones */
+    .btn-primary {
+      background: linear-gradient(90deg,#6b7bff,#4a6bff);
+      color: white;
+      border-radius: 999px;
+      padding: 0.85rem 1.25rem;
+      width: 100%;
+      box-shadow: 0 6px 18px rgba(74,107,255,0.18);
+    }
+
+    .btn-secondary {
+      background: white;
+      color: #0b0b3a;
+      border-radius: 999px;
+      padding: 0.85rem 1.25rem;
+      width: 100%;
+      margin-top: 0.75rem;
+      border: 1px solid rgba(0,0,0,0.05);
+    }
+
+    /* Pequeño separador para efecto sombra en la división */
+    .divider-shadow {
+      width: 18px;
+      background: linear-gradient(90deg, rgba(0,0,0,0.22), rgba(0,0,0,0.0));
+    }
+
+    /* text links */
+    .link-request { color: rgba(255,255,255,0.85); text-decoration: underline; }
+  </style>
+</head>
+<body class="antialiased">
+
+  <div class="min-h-screen flex">
+    <!-- LEFT: panel morado -->
+    <div class="login-left w-full md:w-1/2 lg:w-1/2 p-8 md:p-12" style="background: #1b0bb3;">
+      <div class="max-w-lg mx-auto h-full flex flex-col justify-center">
+        <h1 class="text-4xl font-extrabold text-white mb-2">¡Bienvenido!</h1>
+        <p class="text-white/90 mb-8">Por favor, inicia sesión para comenzar</p>
+
+        <!-- Mostrar errores no field -->
+        {% if form.non_field_errors %}
+          <div class="bg-red-600/80 text-white p-3 rounded mb-4">
+            {{ form.non_field_errors }}
+          </div>
+        {% endif %}
+
+        <form method="post" action="{% url 'login' %}" class="space-y-4">
+          {% csrf_token %}
+
+          <div>
+            <label for="id_username">Rut</label>
+            <div class="input-wrapper">
+              {{ form.username }}
+            </div>
+          </div>
+
+          <div>
+            <label for="id_password">Password</label>
+            <div class="input-wrapper">
+              {{ form.password }}
+              <button type="button" class="eye-btn" id="togglePassword" tabindex="-1" title="Mostrar / ocultar contraseña">
+                <!-- simple icon -->
+                <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#fff" stroke-width="1.6">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="pt-4">
+            <button type="submit" class="btn-primary text-lg font-medium">Iniciar sesión</button>
+          </div>
+
+          <div>
+            <a href="{% url 'password_reset' %}" class="btn-secondary inline-block text-center">Cambiar contraseña</a>
+          </div>
+
+          <div class="text-white/80 text-center mt-6">
+            <span>No tienes cuenta? </span>
+            <a href="#" class="text-white underline">Solicitar cuenta</a>
+          </div>
+        </form>
+
+        <div class="mt-8 text-sm text-white/70 text-center">
+          <small>SGI Chile</small>
+        </div>
+      </div>
+    </div>
+
+    <!-- small shadow divider -->
+    <div class="hidden md:block divider-shadow"></div>
+
+    <!-- RIGHT: gradiente + imagen -->
+    <div class="w-1/2 hidden md:flex items-center justify-center" style="background: linear-gradient(90deg,#14b2dd,#7be0ff);">
+      <div class="relative w-full h-full flex items-start justify-center">
+        <!-- Logo top-right -->
+        <img src="{% static 'img/logo.png' %}" alt="SGI Chile" class="absolute right-8 top-8 w-40 h-auto object-contain"/>
+
+        <!-- Flag image centered to the right panel -->
+        <img src="{% static 'img/flag.png' %}" alt="Bandera SGI" class="max-w-full max-h-[85vh] object-contain translate-y-8"/>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // toggle password visibility: works because Django default login form gives id="id_password"
+    (function(){
+      const toggle = document.getElementById('togglePassword');
+      if(!toggle) return;
+      const pwd = document.getElementById('id_password');
+      toggle.addEventListener('click', () => {
+        if (pwd.type === 'password') {
+          pwd.type = 'text';
+        } else {
+          pwd.type = 'password';
+        }
+      });
+    })();
+  </script>
+
+</body>
+</html>

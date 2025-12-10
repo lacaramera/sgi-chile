@@ -1,0 +1,50 @@
+﻿{% extends "base.html" %}
+{% load static %}
+{% block title %}Inicio{% endblock %}
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+  <!-- Left: carousel (grande) -->
+  <div class="lg:col-span-2 bg-white rounded shadow p-4">
+    <h2 class="text-xl font-semibold mb-4">Carrusel / Noticias destacadas</h2>
+    <div id="carousel" class="w-full h-64 relative overflow-hidden rounded">
+      <img src="{% static 'img/carousel1.jpg' %}" class="carousel-item absolute inset-0 w-full h-64 object-cover opacity-100" />
+      <img src="{% static 'img/carousel2.jpg' %}" class="carousel-item absolute inset-0 w-full h-64 object-cover opacity-0" />
+      <img src="{% static 'img/carousel3.jpg' %}" class="carousel-item absolute inset-0 w-full h-64 object-cover opacity-0" />
+    </div>
+  </div>
+
+  <!-- Right: próximas actividades -->
+  <aside class="bg-white rounded shadow p-4">
+    <h3 class="text-lg font-semibold mb-3">Próximas actividades</h3>
+    <table class="w-full text-sm">
+      <thead class="text-left text-gray-500 text-xs">
+        <tr><th class="py-1">Actividad</th><th class="py-1">Fecha</th></tr>
+      </thead>
+      <tbody>
+        {% for ev in upcoming %}
+        <tr class="border-t">
+          <td class="py-2">{{ ev.title }}</td>
+          <td class="py-2">{{ ev.date|date:"d M Y" }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="2" class="py-2 text-gray-500">No hay actividades próximas.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </aside>
+</div>
+
+<script>
+  // slider simple: rota imágenes cada 3s
+  (function(){
+    const items = document.querySelectorAll('.carousel-item');
+    if (!items.length) return;
+    let idx = 0;
+    setInterval(() => {
+      items[idx].classList.remove('opacity-100'); items[idx].classList.add('opacity-0');
+      idx = (idx + 1) % items.length;
+      items[idx].classList.remove('opacity-0'); items[idx].classList.add('opacity-100');
+    }, 3000);
+  })();
+</script>
+{% endblock %}

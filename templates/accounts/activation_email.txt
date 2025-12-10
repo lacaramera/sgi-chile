@@ -1,0 +1,10 @@
+﻿Hola {{ user.first_name|default:user.username }},
+
+Has sido registrado en la intranet de Soka Gakkai Chile.
+Para activar tu cuenta y elegir una contraseña, pulsa el siguiente enlace:
+
+{{ activation_link }}
+
+Si no solicitaste esto, ignora este correo.
+Saludos,
+Soka Gakkai Chile

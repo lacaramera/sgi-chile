@@ -1,0 +1,249 @@
+﻿{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>{% block title %}SGI{% endblock %}</title>
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    :root { --sgi-blue:#0b59a5; --sidebar-bg:#0b0b0b; --accent:#05b3f0; }
+    body { background:#f7f7fb; }
+    .header-shadow { box-shadow: 0 2px 8px rgba(11,89,165,0.08); }
+    .overlay { background: rgba(0,0,0,0.35); }
+    .sidebar a { color: #cbd5e1; }
+    .sidebar a:hover { color: white; }
+    .sidebar-close {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 999px;
+      width: 36px;
+      height: 36px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      cursor:pointer;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    /* cuando el sidebar está abierto, desplazamos layout 64 (=16rem) a la derecha */
+    body.sidebar-open #mainHeader,
+    body.sidebar-open main,
+    body.sidebar-open footer {
+      margin-left: 16rem;
+    }
+  </style>
+</head>
+<body class="antialiased">
+
+  <!-- Overlay -->
+  <div id="overlay" class="fixed inset-0 z-40 hidden overlay"></div>
+
+  <!-- SIDEBAR -->
+  <aside id="sidebar" class="fixed left-0 top-0 h-full w-64 bg-[var(--sidebar-bg)] text-white z-50 transform -translate-x-64 sidebar transition-transform duration-300 ease-in-out">
+    <div class="relative h-20 flex items-center px-6 border-b border-white/5">
+      <!-- usa logo1.png -->
+      <img src="{% static 'img/logo2.png' %}" alt="SGI" class="w-10 h-10 object-contain mr-3"/>
+      <div>
+        <div class="font-semibold text-lg">Soka gakkai</div>
+        <div class="text-xs text-white/70">de Chile</div>
+      </div>
+
+      <!-- botón X para cerrar -->
+      <button id="btnSidebarClose" aria-label="Cerrar menú" class="sidebar-close">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.6">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+    </div>
+
+    <nav class="sidebar p-4 space-y-1">
+      <a href="{% url 'home' %}" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md bg-[var(--accent)]/5">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="8" height="8" rx="1"/><rect x="13" y="3" width="8" height="8" rx="1"/><rect x="3" y="13" width="8" height="8" rx="1"/><rect x="13" y="13" width="8" height="8" rx="1"/></svg>
+        <span class="font-medium">Inicio</span>
+      </a>
+      <a href="{% url 'kofu' %}" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v18M3 12h18"/></svg>
+        Kofu
+      </a>
+      <a href="#" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19h16V5H4z"/></svg>
+        Fortuna
+      </a>
+      <a href="#" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg>
+        Sector/Región
+      </a>
+      <a href="#" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5"/><path d="M4 22s8-4 8-10V5"/></svg>
+        Notificaciones
+      </a>
+      <a href="#" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0z"/><path d="M2 21v-2a4 4 0 014-4h12a4 4 0 014 4v2"/></svg>
+        Miembros
+      </a>
+
+      <div class="border-t border-white/5 my-3"></div>
+
+      <a href="#" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 12a5 5 0 100-10 5 5 0 000 10z"/><path d="M4 20a8 8 0 0116 0"/></svg>
+        Cuenta
+      </a>
+      <a href="#" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="4" width="18" height="14" rx="2"/></svg>
+        Grupos
+      </a>
+      <a href="#" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 20l9-5-9-5-9 5 9 5z"/></svg>
+        Settings
+      </a>
+
+      <div class="border-t border-white/5 my-3"></div>
+
+      <a href="#" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"/></svg>
+        Información
+      </a>
+      <a href="#" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20"/><path d="M2 12h20"/></svg>
+        Help
+      </a>
+      <a href="{% url 'logout' %}" class="flex items-center gap-3 px-3 py-3 rounded-md">
+        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M10 17l5-5-5-5"/><path d="M5 12h14"/></svg>
+        Log Out
+      </a>
+    </nav>
+  </aside>
+
+  <!-- HEADER -->
+  <header id="mainHeader" class="fixed top-0 right-0 z-40 header-shadow w-full" style="background:var(--sgi-blue);">
+    <div class="container mx-auto px-6 py-4 flex items-center justify-between text-white">
+      <div class="flex items-center gap-4">
+        <!-- botón hamburguesa -->
+        <button id="btnSidebar" aria-label="Abrir menú" class="p-2 rounded-md bg-white/10 hover:bg-white/15 focus:outline-none z-50">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+        </button>
+
+        <!-- logo + texto también en el header -->
+        <div class="flex items-center gap-2">
+          <img src="{% static 'img/logo2.png' %}" alt="SGI" class="w-10 h-10 object-contain"/>
+          <div class="hidden sm:block leading-tight">
+            <div class="text-sm font-semibold">Soka gakkai</div>
+            <div class="text-xs text-white/90">de Chile</div>
+          </div>
+        </div>
+
+        <!-- título -->
+        <div class="absolute left-1/2 transform -translate-x-1/2 text-center hidden lg:block">
+
+          <h1 class="text-2xl font-extrabold">Bienvenida, <span>{{ user.first_name|default:user.username }}</span></h1>
+          <p class="text-sm text-white/90">Veamos qué hay de nuevo!</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-4 min-w-[220px]">
+
+        <div class="text-right hidden sm:block">
+          <div class="text-sm">{{ user.get_role_display }}</div>
+          <div class="text-xs opacity-90">Revisar datos</div>
+        </div>
+
+        <div class="relative">
+          <button id="btnAvatar" class="flex items-center gap-3 bg-white/10 hover:bg-white/15 p-1.5 rounded-full focus:outline-none">
+            <img src="{% static 'img/avatar_placeholder.png' %}" alt="avatar" class="w-10 h-10 rounded-full object-cover border-2 border-white"/>
+          </button>
+
+          <div id="avatarMenu" class="origin-top-right right-0 mt-2 w-48 rounded-md shadow-lg bg-white text-gray-800 absolute hidden">
+            <div class="py-2">
+              <a href="#" class="block px-4 py-2 text-sm hover:bg-gray-100">Mis datos</a>
+              <a href="{% url 'dashboard' %}" class="block px-4 py-2 text-sm hover:bg-gray-100">Mi dashboard</a>
+            </div>
+            <div class="border-t"></div>
+            <div class="p-2">
+              <form method="post" action="{% url 'logout' %}">
+                {% csrf_token %}
+                <button type="submit" class="w-full text-left px-3 py-2 text-sm rounded hover:bg-gray-100">Cerrar sesión</button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN -->
+  <main class="pt-24 container mx-auto px-6 py-6">
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="text-center text-sm text-gray-500 py-6">
+    © Soka Gakkai Chile
+  </footer>
+
+  <script>
+    (function(){
+      const body = document.body;
+      const sidebar = document.getElementById('sidebar');
+      const overlay = document.getElementById('overlay');
+      const btnSidebar = document.getElementById('btnSidebar');
+      const btnSidebarClose = document.getElementById('btnSidebarClose');
+      const btnAvatar = document.getElementById('btnAvatar');
+      const avatarMenu = document.getElementById('avatarMenu');
+      const menuLinks = document.querySelectorAll('[data-close-on-click="true"]');
+
+      function openSidebar(){
+        sidebar.classList.remove('-translate-x-64');
+        sidebar.classList.add('translate-x-0');
+        overlay.classList.remove('hidden');
+        overlay.classList.add('block');
+        body.classList.add('sidebar-open');
+      }
+      function closeSidebar(){
+        sidebar.classList.add('-translate-x-64');
+        sidebar.classList.remove('translate-x-0');
+        overlay.classList.remove('block');
+        overlay.classList.add('hidden');
+        body.classList.remove('sidebar-open');
+      }
+
+      if (btnSidebar) {
+        btnSidebar.addEventListener('click', () => {
+          if (sidebar.classList.contains('-translate-x-64')) openSidebar();
+          else closeSidebar();
+        });
+      }
+      if (btnSidebarClose) {
+        btnSidebarClose.addEventListener('click', () => closeSidebar());
+      }
+      if (overlay) {
+        overlay.addEventListener('click', () => closeSidebar());
+      }
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeSidebar();
+      });
+
+      menuLinks.forEach(link => {
+        link.addEventListener('click', () => closeSidebar());
+      });
+
+      if (btnAvatar) {
+        btnAvatar.addEventListener('click', (e) => {
+          e.stopPropagation();
+          avatarMenu.classList.toggle('hidden');
+        });
+      }
+      document.addEventListener('click', () => {
+        if (avatarMenu && !avatarMenu.classList.contains('hidden')) {
+          avatarMenu.classList.add('hidden');
+        }
+      });
+    })();
+  </script>
+
+</body>
+</html>
