@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+{% block title %}Editar miembro{% endblock %}
+{% block content %}
+
+<div class="max-w-5xl mx-auto space-y-6">
+
+  <div class="bg-white rounded-3xl shadow-sm px-8 py-5 border border-gray-100">
+    <h1 class="text-2xl font-bold text-sky-800">Editar miembro</h1>
+    <p class="text-sm text-gray-500">Actualiza datos y gestiona su hogar/familia.</p>
+  </div>
+
+  {% if messages %}
+    <div class="space-y-2">
+      {% for m in messages %}
+        <div class="rounded-2xl px-4 py-3 text-sm
+          {% if m.tags == 'success' %} bg-green-100 text-green-800 border border-green-200
+          {% elif m.tags == 'error' %} bg-red-100 text-red-800 border border-red-200
+          {% else %} bg-gray-100 text-gray-800 border border-gray-200 {% endif %}">
+          {{ m }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <!-- Datos del miembro -->
+  <div class="bg-white rounded-3xl shadow-md px-8 py-6 border border-gray-100">
+    <h2 class="text-xl font-bold text-gray-800 mb-4">Datos</h2>
+
+    <form method="post" class="space-y-4">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="save_user"/>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-sm font-semibold mb-1">Nombre</label>
+          <input name="first_name" value="{{ member.first_name }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+        </div>
+        <div>
+          <label class="block text-sm font-semibold mb-1">Apellido</label>
+          <input name="last_name" value="{{ member.last_name }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold mb-1">Email</label>
+          <input name="email" value="{{ member.email }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold mb-1">Rol</label>
+          <select name="role" class="w-full rounded-2xl border border-gray-200 px-4 py-2">
+            {% for val, label in role_choices %}
+              <option value="{{ val }}" {% if member.role == val %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <input id="is_active" type="checkbox" name="is_active" {% if member.is_active %}checked{% endif %} class="h-4 w-4"/>
+          <label for="is_active" class="text-sm font-semibold">Activo</label>
+        </div>
+
+        <div class="text-sm text-gray-500">
+          <div><span class="font-semibold">Usuario:</span> {{ member.username }}</div>
+          <div><span class="font-semibold">ID:</span> {{ member.id }}</div>
+        </div>
+      </div>
+
+      <div class="pt-2">
+        <button class="px-8 py-2 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+          Guardar cambios
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- Hogar -->
+  <div class="bg-white rounded-3xl shadow-md px-8 py-6 border border-gray-100">
+    <div class="flex items-start justify-between gap-4">
+      <div>
+        <h2 class="text-xl font-bold text-gray-800">Hogar / Familia</h2>
+        {% if household %}
+          <p class="text-sm text-gray-500">Hogar actual: <span class="font-semibold">{{ household }}</span></p>
+        {% else %}
+          <p class="text-sm text-gray-500">Este miembro aún no tiene hogar asignado.</p>
+        {% endif %}
+      </div>
+
+      {% if not household %}
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_household"/>
+          <button class="px-6 py-2 rounded-full bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700">
+            Crear hogar
+          </button>
+        </form>
+      {% endif %}
+    </div>
+
+    {% if household %}
+      <div class="mt-6 overflow-hidden rounded-2xl border border-gray-200">
+        <div class="grid grid-cols-3 bg-gradient-to-r from-sky-600 to-blue-500 text-white font-semibold text-sm">
+          <div class="px-4 py-3">Miembro</div>
+          <div class="px-4 py-3">Relación</div>
+          <div class="px-4 py-3 text-right">Acción</div>
+        </div>
+
+        {% for m in memberships %}
+          <div class="grid grid-cols-3 bg-white border-t items-center">
+            <div class="px-4 py-3 text-sm font-medium">
+              {{ m.user.first_name }} {{ m.user.last_name }}
+              {% if m.is_primary %}<span class="text-xs text-sky-600">(Principal)</span>{% endif %}
+            </div>
+            <div class="px-4 py-3 text-sm text-gray-700">
+              {{ m.get_relationship_display }}
+            </div>
+            <div class="px-4 py-2 text-right">
+              {% if not m.is_primary or memberships|length == 1 %}
+                <form method="post" class="inline">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="remove_from_household"/>
+                  <input type="hidden" name="membership_id" value="{{ m.id }}"/>
+                  <button class="px-4 py-1.5 rounded-full border border-gray-300 text-sm hover:bg-gray-50">
+                    Quitar
+                  </button>
+                </form>
+              {% else %}
+                <span class="text-xs text-gray-400">—</span>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <!-- Agregar al hogar -->
+      <div class="mt-6 p-4 rounded-2xl bg-gray-50 border border-gray-200">
+        <h3 class="font-semibold text-gray-800 mb-2">Agregar miembro al hogar</h3>
+
+        <form method="get" class="flex gap-2 mb-3">
+          <input name="q" value="{{ q }}" placeholder="Buscar por nombre o username..." class="flex-1 rounded-2xl border border-gray-200 px-4 py-2"/>
+          <button class="px-5 py-2 rounded-full bg-gray-800 text-white text-sm font-semibold hover:bg-black">Buscar</button>
+        </form>
+
+        {% if candidates %}
+          <div class="space-y-2">
+            {% for u in candidates %}
+              <form method="post" class="flex items-center justify-between gap-2 bg-white rounded-2xl border border-gray-200 p-3">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_to_household"/>
+                <input type="hidden" name="add_user_id" value="{{ u.id }}"/>
+
+                <div class="text-sm">
+                  <div class="font-semibold">{{ u.first_name }} {{ u.last_name }}</div>
+                  <div class="text-gray-500">@{{ u.username }}</div>
+                </div>
+
+                <div class="flex items-center gap-2">
+                  <select name="relationship" class="rounded-xl border border-gray-200 px-3 py-1.5 text-sm">
+                    {% for val, label in rel_choices %}
+                      <option value="{{ val }}">{{ label }}</option>
+                    {% endfor %}
+                  </select>
+
+                  <button class="px-5 py-2 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+                    Agregar
+                  </button>
+                </div>
+              </form>
+            {% endfor %}
+          </div>
+        {% else %}
+          {% if q %}
+            <div class="text-sm text-gray-500">No se encontraron usuarios con esa búsqueda.</div>
+          {% endif %}
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+
+{% endblock %}

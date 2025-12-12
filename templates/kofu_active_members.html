@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Miembros activos en contribución{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+
+  <div class="bg-white rounded-3xl shadow-sm px-8 py-5 border border-gray-100">
+    <h1 class="text-2xl font-bold text-sky-800">
+      Miembros activos en contribución (Kofu)
+    </h1>
+    <p class="text-sm text-gray-500 mt-1">
+      Se consideran activos en Kofu quienes suman al menos ${{ threshold }} en contribuciones confirmadas.
+    </p>
+  </div>
+
+  <div class="bg-white rounded-2xl shadow p-4">
+      <div class="flex justify-end mb-3">
+    <a href="{% url 'kofu_active_members_export' %}"
+       class="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-sky-600 text-white text-xs font-semibold hover:bg-sky-700">
+      Descargar informe
+    </a>
+  </div>
+
+    {% if active_members %}
+      <table class="w-full text-sm">
+        <thead class="text-gray-500 text-xs uppercase border-b">
+          <tr>
+            <th class="py-2 text-left">Miembro</th>
+            <th class="py-2 text-left">Usuario</th>
+            <th class="py-2 text-left">N° contribuciones</th>
+            <th class="py-2 text-left">Total aportado</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for m in active_members %}
+          <tr class="border-b last:border-0">
+            <td class="py-2">
+              {{ m.member__first_name }} {{ m.member__last_name }}
+            </td>
+            <td class="py-2 text-gray-500">
+              {{ m.member__username }}
+            </td>
+            <td class="py-2">{{ m.contributions_count }}</td>
+            <td class="py-2">${{ m.total_amount }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="text-gray-500 text-sm">
+        Aún no hay miembros que cumplan el mínimo de ${{ threshold }} en contribuciones confirmadas.
+      </p>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,41 @@
+﻿/* Estilos globales SGI Chile */
+:root {
+  --sgi-blue: #0b59a5;
+  --sidebar-bg: #0b0b0b;
+  --accent: #05b3f0;
+}
+
+/* Puedes ir moviendo acá lo que antes estaba en <style> de base.html */
+body {
+  background: #f7f7fb;
+}
+
+/* Ejemplo: cosas del sidebar/header que teníamos inline */
+.header-shadow {
+  box-shadow: 0 2px 8px rgba(11,89,165,0.08);
+}
+.overlay {
+  background: rgba(0,0,0,0.35);
+}
+.sidebar a {
+  color: #cbd5e1;
+}
+.sidebar a:hover {
+  color: white;
+}
+.sidebar-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255,255,255,0.06);
+  border-radius: 999px;
+  width: 36px;
+  height: 36px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+  border: 1px solid rgba(255,255,255,0.15);
+}
+
+/* Aquí luego puedes agregar estilos específicos para Kofu, etc. */

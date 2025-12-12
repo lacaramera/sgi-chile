@@ -3,6 +3,10 @@ import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# === ARCHIVOS SUBIDOS POR USUARIOS ===
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+
 SECRET_KEY = 'REEMPLAZA_POR_UNA_SECRETA_LARGA'  # cámbiala para producción
 DEBUG = True
 
@@ -50,6 +54,8 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'accounts.context_processors.notifications',
+
             ],
         },
     },
@@ -86,9 +92,10 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Usar el modelo custom que vamos a crear
 AUTH_USER_MODEL = 'accounts.User'
 
-# Email en desarrollo: imprime correos en consola
-EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-DEFAULT_FROM_EMAIL = 'no-reply@sokagakkai.cl'
+# === EMAIL (modo desarrollo: muestra los correos en la consola) ===
+EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
+DEFAULT_FROM_EMAIL = "no-reply@sgi-chile.cl"
+
 
 # Para producción (ejemplo con SMTP, usa variables de entorno con python-dotenv):
 # EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'

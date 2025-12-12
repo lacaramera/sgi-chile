@@ -1,18 +1,145 @@
 ﻿{% extends "base.html" %}
 {% load static %}
-{% block title %}Kofu{% endblock %}
+
+{% block title %}Kofu - Mis contribuciones{% endblock %}
 
 {% block content %}
-<div class="max-w-4xl mx-auto">
-  <h1 class="text-2xl font-bold text-sky-800 mb-4">Registro de Kofu</h1>
-  <p class="text-gray-600 mb-6">
-    Aquí irá el diseño de la página de Kofu según tu mockup (contribución de dinero).
-  </p>
 
-  <div class="bg-white rounded-lg shadow p-6">
-    <p class="text-sm text-gray-500">
-      (Por ahora es solo una maqueta vacía para probar la navegación. Luego la reemplazamos.)
-    </p>
+<div class="max-w-6xl mx-auto space-y-6">
+
+  <!-- Título grande tipo pestaña -->
+  <div class="bg-white rounded-3xl shadow-sm px-8 py-5 border border-gray-100">
+    <h1 class="text-2xl font-bold text-sky-800">
+      Departamento de contribución
+    </h1>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- COLUMNA IZQUIERDA: botones -->
+    <div class="space-y-4">
+
+      <!-- Botón: Informe de contribución -->
+      <a href="{% url 'kofu_report' %}" class="block">
+        <div class="flex items-center gap-4 px-6 py-4 rounded-2xl bg-gradient-to-r from-sky-600 to-blue-500 text-white shadow hover:shadow-md transition-shadow">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-white/15">
+            <!-- icono: informe -->
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+              <path d="M7 3h7l5 5v13H7z"/>
+              <path d="M14 3v5h5"/>
+              <path d="M10 13h5M10 17h3"/>
+            </svg>
+          </div>
+          <span class="font-semibold text-lg">Informe de contribución</span>
+        </div>
+      </a>
+
+      <!-- Botón: Historial de contribuciones -->
+      <a href="{% url 'kofu_history' %}" class="block">
+        <div class="flex items-center gap-4 px-6 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-sky-500 text-white shadow hover:shadow-md transition-shadow">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-white/15">
+            <!-- icono: historial -->
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+              <circle cx="12" cy="12" r="9"/>
+              <path d="M12 7v5l3 3"/>
+            </svg>
+          </div>
+          <span class="font-semibold text-lg">Historial de contribuciones</span>
+        </div>
+      </a>
+
+      <!-- Botón: Ayuda -->
+      <a href="#" class="block">
+        <div class="flex items-center gap-4 px-6 py-4 rounded-2xl bg-gradient-to-r from-sky-500 to-cyan-500 text-white shadow hover:shadow-md transition-shadow">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-white/15">
+            <!-- icono: info -->
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+              <circle cx="12" cy="12" r="9"/>
+              <path d="M12 16v-4"/>
+              <path d="M12 8h.01"/>
+            </svg>
+          </div>
+          <span class="font-semibold text-lg">Ayuda</span>
+        </div>
+      </a>
+
+      <!-- Botón: Miembros activos (solo roles con permiso) -->
+      {% if can_view_active_members %}
+      <a href="{% url 'kofu_active_members' %}" class="block">
+        <div class="flex items-center gap-4 px-6 py-4 rounded-2xl bg-gradient-to-r from-blue-800 to-cyan-400 text-white shadow hover:shadow-md transition-shadow">
+          <div class="flex items-center justify-center w-10 h-10 rounded-full bg-white/15">
+            <!-- icono: miembros -->
+            <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+              <circle cx="9" cy="7" r="3"/>
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            </svg>
+          </div>
+          <span class="font-semibold text-lg">Miembros activos</span>
+        </div>
+      </a>
+
+      <!-- Botón: Gestión de informes (solo roles con permiso) -->
+      <a href="{% url 'kofu_admin_reports' %}" class="block mt-4">
+    <div class="bg-gradient-to-r from-indigo-500 to-violet-500 rounded-2xl px-6 py-4 text-white shadow-md flex items-center justify-between">
+      <div>
+        <div class="text-sm uppercase tracking-wide text-white/80">Coordinación</div>
+        <div class="text-lg font-semibold">Revisar informes de contribución</div>
+        <p class="text-xs text-white/80 mt-1">
+          Ver, aprobar o rechazar los depósitos informados por los miembros.
+        </p>
+      </div>
+      <div class="text-3xl">
+        ✓
+      </div>
+    </div>
+  </a>
+{% endif %}
+      
+
+    </div>
+
+    <!-- COLUMNA DERECHA (2 columnas): Datos y contacto -->
+    <div class="lg:col-span-2">
+      <div class="bg-white rounded-3xl shadow-sm border border-gray-100 px-8 py-8 h-full flex flex-col">
+        
+        <!-- Encabezado pill "Datos y contacto" -->
+        <div class="mb-6">
+          <span class="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-sky-600 text-white text-sm font-semibold">
+            <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-white/20">
+              <!-- icono -->
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+                <path d="M12 3l8 4v5c0 5-3.5 9-8 9s-8-4-8-9V7z"/>
+                <path d="M9 14l2 2 4-4"/>
+              </svg>
+            </span>
+            Datos y contacto
+          </span>
+        </div>
+
+        <!-- Texto principal -->
+        <div class="space-y-4">
+          <h2 class="text-3xl font-extrabold text-sky-700 leading-tight">
+            Corporación Soka Gakkai<br/>
+            Internacional de Chile
+          </h2>
+
+          <div class="mt-4 space-y-2 text-lg text-gray-800">
+            <p><span class="font-semibold">Rut:</span> 71.029.900-5</p>
+            <p><span class="font-semibold">Banco:</span> BCI</p>
+            <p><span class="font-semibold">Tipo de cuenta:</span> Cuenta corriente</p>
+            <p><span class="font-semibold">Número de cuenta:</span> 96654058</p>
+            <p class="pt-2"><span class="font-semibold">Correo:</span> contribucionsgich@gmail.com</p>
+          </div>
+        </div>
+
+        <!-- (Opcional) texto inferior -->
+        <!-- <div class="mt-6 text-sm text-gray-500">
+          * Recuerda enviar tu comprobante de depósito al correo indicado.
+        </div> -->
+      </div>
+    </div>
   </div>
 </div>
+
 {% endblock %}

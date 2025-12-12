@@ -9,34 +9,8 @@
   <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <style>
-    :root { --sgi-blue:#0b59a5; --sidebar-bg:#0b0b0b; --accent:#05b3f0; }
-    body { background:#f7f7fb; }
-    .header-shadow { box-shadow: 0 2px 8px rgba(11,89,165,0.08); }
-    .overlay { background: rgba(0,0,0,0.35); }
-    .sidebar a { color: #cbd5e1; }
-    .sidebar a:hover { color: white; }
-    .sidebar-close {
-      position: absolute;
-      top: 12px;
-      right: 12px;
-      background: rgba(255,255,255,0.06);
-      border-radius: 999px;
-      width: 36px;
-      height: 36px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      cursor:pointer;
-      border: 1px solid rgba(255,255,255,0.15);
-    }
-    /* cuando el sidebar está abierto, desplazamos layout 64 (=16rem) a la derecha */
-    body.sidebar-open #mainHeader,
-    body.sidebar-open main,
-    body.sidebar-open footer {
-      margin-left: 16rem;
-    }
-  </style>
+  <!-- CSS global del proyecto -->
+  <link rel="stylesheet" href="{% static 'css/main.css' %}">
 </head>
 <body class="antialiased">
 
@@ -46,7 +20,7 @@
   <!-- SIDEBAR -->
   <aside id="sidebar" class="fixed left-0 top-0 h-full w-64 bg-[var(--sidebar-bg)] text-white z-50 transform -translate-x-64 sidebar transition-transform duration-300 ease-in-out">
     <div class="relative h-20 flex items-center px-6 border-b border-white/5">
-      <!-- usa logo1.png -->
+      <!-- usa logo2.png -->
       <img src="{% static 'img/logo2.png' %}" alt="SGI" class="w-10 h-10 object-contain mr-3"/>
       <div>
         <div class="font-semibold text-lg">Soka gakkai</div>
@@ -70,6 +44,18 @@
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v18M3 12h18"/></svg>
         Kofu
       </a>
+      {% if user.is_authenticated and user.is_admin_sistema %}
+  <a href="{% url 'create_member' %}" data-close-on-click="true"
+     class="flex items-center gap-3 px-3 py-3 rounded-md">
+    <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+      <circle cx="9" cy="7" r="4"/>
+      <path d="M20 8v6"/><path d="M23 11h-6"/>
+    </svg>
+    Crear miembro
+  </a>
+{% endif %}
+
       <a href="#" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4 19h16V5H4z"/></svg>
         Fortuna
@@ -78,10 +64,7 @@
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z"/></svg>
         Sector/Región
       </a>
-      <a href="#" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
-        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5"/><path d="M4 22s8-4 8-10V5"/></svg>
-        Notificaciones
-      </a>
+      
       <a href="#" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0z"/><path d="M2 21v-2a4 4 0 014-4h12a4 4 0 014 4v2"/></svg>
         Miembros
@@ -119,7 +102,7 @@
     </nav>
   </aside>
 
-  <!-- HEADER -->
+    <!-- HEADER -->
   <header id="mainHeader" class="fixed top-0 right-0 z-40 header-shadow w-full" style="background:var(--sgi-blue);">
     <div class="container mx-auto px-6 py-4 flex items-center justify-between text-white">
       <div class="flex items-center gap-4">
@@ -137,21 +120,78 @@
           </div>
         </div>
 
-        <!-- título -->
+        <!-- título centrado -->
         <div class="absolute left-1/2 transform -translate-x-1/2 text-center hidden lg:block">
-
-          <h1 class="text-2xl font-extrabold">Bienvenida, <span>{{ user.first_name|default:user.username }}</span></h1>
+          <h1 class="text-2xl font-extrabold">
+            Bienvenida, <span>{{ user.first_name|default:user.username }}</span>
+          </h1>
           <p class="text-sm text-white/90">Veamos qué hay de nuevo!</p>
         </div>
       </div>
 
-      <div class="flex items-center gap-4 min-w-[220px]">
+      <div class="flex items-center gap-4 min-w-[260px] justify-end">
 
         <div class="text-right hidden sm:block">
           <div class="text-sm">{{ user.get_role_display }}</div>
           <div class="text-xs opacity-90">Revisar datos</div>
         </div>
 
+        <!-- BOTÓN NOTIFICACIONES -->
+        {% if user.is_authenticated %}
+        <div class="relative">
+          <button id="btnNotifications"
+                  class="relative p-2 rounded-full bg-white/10 hover:bg-white/20 focus:outline-none">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none"
+                 viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M15 17h5l-1.4-1.4A2 2 0 0118 14.172V11a6 6 0 10-12 0v3.172a2 2 0 01-.586 1.414L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+            </svg>
+            {% if notifications_unread_count and notifications_unread_count > 0 %}
+              <span class="absolute -top-1 -right-1 inline-flex items-center justify-center
+                           px-1.5 py-0.5 rounded-full bg-red-500 text-[10px] font-bold">
+                {{ notifications_unread_count }}
+              </span>
+            {% endif %}
+          </button>
+
+          <!-- Menú notificaciones -->
+          <div id="notificationsMenu"
+               class="origin-top-right right-0 mt-2 w-72 rounded-md shadow-lg bg-white text-gray-800 absolute hidden z-50">
+            <div class="px-3 py-2 border-b">
+              <div class="text-sm font-semibold">Notificaciones</div>
+              <div class="text-xs text-gray-500">
+                {% if notifications_unread_count and notifications_unread_count > 0 %}
+                  Tienes {{ notifications_unread_count }} sin leer
+                {% else %}
+                  No tienes notificaciones nuevas
+                {% endif %}
+              </div>
+            </div>
+            <div class="max-h-64 overflow-y-auto">
+              {% for n in notifications_unread %}
+                <div class="px-3 py-2 border-b last:border-0 text-sm">
+                  <div class="font-medium">{{ n.title }}</div>
+                  <div class="text-xs text-gray-600 whitespace-pre-line">{{ n.message }}</div>
+                  <div class="text-[10px] text-gray-400 mt-1">
+                    {{ n.created_at|date:"d/m/Y H:i" }}
+                  </div>
+                </div>
+              {% empty %}
+                <div class="px-3 py-3 text-xs text-gray-500">
+                  No hay notificaciones nuevas.
+                </div>
+              {% endfor %}
+            </div>
+            <div class="px-3 py-2 text-right border-t">
+              <a href="{% url 'notifications_center' %}" class="text-xs text-sky-600 hover:underline">
+                Ver todas
+              </a>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- AVATAR -->
         <div class="relative">
           <button id="btnAvatar" class="flex items-center gap-3 bg-white/10 hover:bg-white/15 p-1.5 rounded-full focus:outline-none">
             <img src="{% static 'img/avatar_placeholder.png' %}" alt="avatar" class="w-10 h-10 rounded-full object-cover border-2 border-white"/>
@@ -176,6 +216,25 @@
     </div>
   </header>
 
+  <!-- Mensaje de exito en la creación/Edición de usuario-->
+
+  {% if messages %}
+  <div class="pt-24 container mx-auto px-6">
+    <div class="space-y-2">
+      {% for message in messages %}
+        <div class="rounded-xl px-4 py-3 text-sm shadow
+          {% if message.tags == 'success' %} bg-green-50 text-green-800 border border-green-200
+          {% elif message.tags == 'error' %} bg-red-50 text-red-800 border border-red-200
+          {% else %} bg-blue-50 text-blue-800 border border-blue-200 {% endif %}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+
+
+
   <!-- MAIN -->
   <main class="pt-24 container mx-auto px-6 py-6">
     {% block content %}{% endblock %}
@@ -185,7 +244,7 @@
     © Soka Gakkai Chile
   </footer>
 
-  <script>
+    <script>
     (function(){
       const body = document.body;
       const sidebar = document.getElementById('sidebar');
@@ -195,6 +254,8 @@
       const btnAvatar = document.getElementById('btnAvatar');
       const avatarMenu = document.getElementById('avatarMenu');
       const menuLinks = document.querySelectorAll('[data-close-on-click="true"]');
+      const btnNotifications = document.getElementById('btnNotifications');
+      const notificationsMenu = document.getElementById('notificationsMenu');
 
       function openSidebar(){
         sidebar.classList.remove('-translate-x-64');
@@ -212,38 +273,70 @@
       }
 
       if (btnSidebar) {
-        btnSidebar.addEventListener('click', () => {
+        btnSidebar.addEventListener('click', (e) => {
+          e.stopPropagation();
           if (sidebar.classList.contains('-translate-x-64')) openSidebar();
           else closeSidebar();
         });
       }
       if (btnSidebarClose) {
-        btnSidebarClose.addEventListener('click', () => closeSidebar());
+        btnSidebarClose.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeSidebar();
+        });
       }
       if (overlay) {
         overlay.addEventListener('click', () => closeSidebar());
       }
       document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape') closeSidebar();
+        if (e.key === 'Escape') {
+          closeSidebar();
+          if (avatarMenu && !avatarMenu.classList.contains('hidden')) {
+            avatarMenu.classList.add('hidden');
+          }
+          if (notificationsMenu && !notificationsMenu.classList.contains('hidden')) {
+            notificationsMenu.classList.add('hidden');
+          }
+        }
       });
 
       menuLinks.forEach(link => {
         link.addEventListener('click', () => closeSidebar());
       });
 
-      if (btnAvatar) {
+      // Avatar
+      if (btnAvatar && avatarMenu) {
         btnAvatar.addEventListener('click', (e) => {
           e.stopPropagation();
           avatarMenu.classList.toggle('hidden');
+          if (notificationsMenu && !notificationsMenu.classList.contains('hidden')) {
+            notificationsMenu.classList.add('hidden');
+          }
         });
       }
+
+      // Notificaciones
+      if (btnNotifications && notificationsMenu) {
+        btnNotifications.addEventListener('click', (e) => {
+          e.stopPropagation();
+          notificationsMenu.classList.toggle('hidden');
+          if (avatarMenu && !avatarMenu.classList.contains('hidden')) {
+            avatarMenu.classList.add('hidden');
+          }
+        });
+      }
+
       document.addEventListener('click', () => {
         if (avatarMenu && !avatarMenu.classList.contains('hidden')) {
           avatarMenu.classList.add('hidden');
         }
+        if (notificationsMenu && !notificationsMenu.classList.contains('hidden')) {
+          notificationsMenu.classList.add('hidden');
+        }
       });
     })();
   </script>
+
 
 </body>
 </html>

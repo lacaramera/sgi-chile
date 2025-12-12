@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Crear miembro{% endblock %}
+{% block content %}
+{% csrf_token %}
+<div class="max-w-2xl mx-auto bg-white rounded-2xl shadow p-6">
+  <h2 class="text-2xl font-extrabold text-sky-800 mb-1">Crear miembro</h2>
+  <p class="text-sm text-gray-500 mb-6">Solo admins/responsables pueden crear cuentas.</p>
+
+  {% if form.errors %}
+    <div class="mb-4 p-3 rounded bg-red-50 text-red-700 text-sm">
+      Revisa los campos. Hay errores en el formulario.
+    </div>
+  {% endif %}
+
+  <form method="post" class="space-y-4">
+    {% csrf_token %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="text-sm font-semibold">Username</label>
+        {{ form.username }}
+      </div>
+      <div>
+        <label class="text-sm font-semibold">RUT</label>
+        {{ form.rut }}
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold">Nombre</label>
+        {{ form.first_name }}
+      </div>
+      <div>
+        <label class="text-sm font-semibold">Apellido</label>
+        {{ form.last_name }}
+      </div>
+
+      <div class="md:col-span-2">
+        <label class="text-sm font-semibold">Email (opcional)</label>
+        {{ form.email }}
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold">Rol</label>
+        {{ form.role }}
+      </div>
+
+      <div class="flex items-center gap-2 mt-6">
+        {{ form.is_active }}
+        <span class="text-sm">Activo</span>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+      <div>
+        <label class="text-sm font-semibold">Contraseña</label>
+        {{ form.password1 }}
+      </div>
+      <div>
+        <label class="text-sm font-semibold">Confirmar contraseña</label>
+        {{ form.password2 }}
+      </div>
+    </div>
+
+    <div class="pt-4 flex gap-3">
+      <button class="px-5 py-2 rounded-lg bg-sky-700 text-white font-semibold">Crear</button>
+      <a href="{% url 'home' %}" class="px-5 py-2 rounded-lg border">Cancelar</a>
+    </div>
+  </form>
+</div>
+
+<style>
+  input, select {
+    width: 100%;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.95rem;
+  }
+</style>
+{% endblock %}
