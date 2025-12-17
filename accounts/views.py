@@ -1,5 +1,5 @@
 import csv, json
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login
 from django.utils import timezone
@@ -7,39 +7,49 @@ from django.utils.http import urlsafe_base64_decode
 from django.utils.encoding import force_str
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.forms import SetPasswordForm
-from .models import User, Event, ContributionReport, Contribution, Notification, HouseholdMember
+from .models import User, Event, HomeBanner, ContributionReport, Contribution, Notification, Household, HouseholdMember, Sector, Zona, Grupo
 from decimal import Decimal, InvalidOperation
-from django.db.models import Sum, Count
-from django.http import HttpResponseForbidden, HttpResponse
+from django.db.models import Sum, Count,  Q
+from django.http import HttpResponseForbidden, HttpResponse, JsonResponse
+from .models import Sector, Zona, Grupo
 from django.core.mail import send_mail
 from django.conf import settings
 from .forms import MemberCreateForm, MemberEditForm
 from django.core.exceptions import PermissionDenied
 from django.contrib import messages
-
-
+from django.db import models
+from django.template.loader import get_template
+from calendar import monthrange
 
 def home(request):
-    # carousel: imágenes estáticas (si los eventos tienen image, las usamos)
-    # coger próximos 5 eventos públicos
-    now = timezone.now().date()
-    upcoming = Event.objects.filter(is_public=True, date__gte=now).order_by('date')[:6]
+    today = timezone.now().date()
 
-    # Si no hay imágenes en Events, puedes configurar imágenes por defecto en static/img/
-    carousel_images = []
-    for ev in upcoming:
-        if ev.image:
-            carousel_images.append(ev.image)
-    # si no hay imágenes, usa una lista fija
-    if not carousel_images:
-        carousel_images = ['carousel1.jpg','carousel2.jpg','carousel3.jpg']  # guarda estas en static/img/
+    # 1) BANNERS: SIEMPRE definir antes del context
+    banners = HomeBanner.objects.filter(is_active=True).order_by("order", "-created_at")
+
+    # 2) EVENTOS: del mes actual (máx 20)
+    start = today.replace(day=1)
+    end = today.replace(day=monthrange(today.year, today.month)[1])
+
+    month_qs = Event.objects.filter(date__range=[start, end]).order_by("date", "time")
+
+    # Regla de visibilidad:
+    # - responsables/directiva/admin: ven públicos + privados
+    # - resto: solo públicos
+    if request.user.is_authenticated and request.user.can_view_active_members():
+        upcoming = month_qs[:20]
+    else:
+        upcoming = month_qs.filter(is_public=True)[:20]
+
+    # 3) Fallback si no hay banners activos
+    fallback_images = ["banner.jpg", "banner2.jpg", "banner3.jpg"]
 
     context = {
-        'carousel_images': carousel_images,
-        'upcoming': upcoming,
+        "banners": banners,
+        "fallback_images": fallback_images,
+        "upcoming": upcoming,
     }
-    return render(request, 'home.html', context)
-
+    return render(request, "home.html", context)
 
 def activate_account(request, uidb64, token):
     try:
@@ -94,11 +104,13 @@ def kofu_report(request):
     # ✅ Familia real desde Household (fallback: solo el usuario)
     family_members = [request.user]
     try:
-        membership = request.user.household_membership  # HouseholdMember
-        qs = HouseholdMember.objects.filter(
-            household=membership.household
-        ).select_related("user")
-        qs = sorted(qs, key=lambda m: (not m.is_primary, m.user.id))
+        membership = request.user.household_membership  # HouseholdMember (OneToOne)
+        qs = (
+            HouseholdMember.objects
+            .filter(household=membership.household)
+            .select_related("user")
+            .order_by("-is_primary", "user__first_name", "user__last_name", "user__id")
+        )
         family_members = [m.user for m in qs]
     except HouseholdMember.DoesNotExist:
         pass
@@ -111,6 +123,7 @@ def kofu_report(request):
         note = request.POST.get("note", "").strip()
         receipt = request.FILES.get("receipt")
 
+        # ✅ OJO: esto es lo correcto (IDs + montos)
         family_user_ids = request.POST.getlist("family_user_id[]")
         family_amounts  = request.POST.getlist("family_amount[]")
 
@@ -143,7 +156,7 @@ def kofu_report(request):
         lines = []
         family_sum = Decimal("0")
 
-        # Mapa para asegurar que solo se puedan usar IDs del hogar (seguridad)
+        # seguridad: solo IDs del hogar
         allowed_ids = set(u.id for u in family_members)
 
         for uid_text, monto_text in zip(family_user_ids, family_amounts):
@@ -196,11 +209,10 @@ def kofu_report(request):
             family_sum = amount
 
         # ✅ si distribuyó, debe cuadrar con el monto principal
-        if amount is not None and splits:
-            if family_sum != amount:
-                errors["family_distribution"] = (
-                    f"La suma de la distribución (${family_sum}) no coincide con el monto informado (${amount})."
-                )
+        if amount is not None and splits and family_sum != amount:
+            errors["family_distribution"] = (
+                f"La suma de la distribución (${family_sum}) no coincide con el monto informado (${amount})."
+            )
 
         if errors:
             context.update({
@@ -209,6 +221,8 @@ def kofu_report(request):
                 "date_value": date_raw,
                 "note_value": note,
                 "success": False,
+                # opcional: si quieres repoblar inputs en el HTML después
+                "family_amounts_prefill": family_amounts,
             })
         else:
             distribution_payload = {
@@ -241,6 +255,7 @@ def kofu_report(request):
 
 
 
+
 @login_required
 def kofu_history(request):
     """
@@ -264,22 +279,24 @@ def kofu_history(request):
 def kofu_active_members(request):
     """
     Miembros activos en contribución (Kofu).
-    Solo visible para responsables, directiva, admin, etc.
-    Activo = total contribuciones confirmadas >= 12.000 CLP.
+    Activo = total contribuciones confirmadas >= THRESHOLD.
     """
     if not request.user.can_view_active_members():
         return HttpResponseForbidden("No tienes permiso para ver esta sección.")
 
     THRESHOLD = Decimal("12000.00")
 
-    active = (
+    qs = (
         Contribution.objects
         .filter(is_confirmed=True)
         .values(
             "member__id",
             "member__first_name",
             "member__last_name",
-            "member__username",
+            "member__role",  # ✅ rol (código)
+            "member__group__zona__sector__name",
+            "member__group__zona__name",
+            "member__group__name",
         )
         .annotate(
             total_amount=Sum("amount"),
@@ -288,6 +305,12 @@ def kofu_active_members(request):
         .filter(total_amount__gte=THRESHOLD)
         .order_by("-total_amount")
     )
+
+    role_map = dict(User.ROLE_CHOICES)
+
+    active = list(qs)  # ✅ recién aquí lo convertimos a lista
+    for m in active:
+        m["role_label"] = role_map.get(m["member__role"], m["member__role"])
 
     context = {
         "active_members": active,
@@ -446,20 +469,162 @@ def create_member(request):
         if form.is_valid():
             form.save()
             messages.success(request, "✅ Miembro creado correctamente.")
-            return redirect("home")  
+            return redirect("home")
     else:
         form = MemberCreateForm(initial={"is_active": True})
 
-    return render(request, "accounts/create_member.html", {"form": form})
+    return render(request, "accounts/create_member.html", {
+        "form": form,
+        "sectors": Sector.objects.all().order_by("name"),  # ✅ para cascada
+        "role_choices": getattr(request.user, "ROLE_CHOICES", None),
+    })
 
-from .models import User, Household, HouseholdMember
-from django.shortcuts import get_object_or_404
-from django.contrib import messages
-from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
+
 
 def _is_admin_like(user):
     return user.is_authenticated and (user.is_superuser or user.is_staff or getattr(user, "is_admin_sistema", lambda: False)())
+
+
+def _apply_members_filters(request, qs):
+    q = (request.GET.get("q") or "").strip()
+    sector_id = (request.GET.get("sector_id") or "").strip()
+    zona_id = (request.GET.get("zona_id") or "").strip()
+    group_id = (request.GET.get("group_id") or "").strip()
+    role = (request.GET.get("role") or "").strip()
+
+    if q:
+        qs = qs.filter(
+            models.Q(first_name__icontains=q) |
+            models.Q(last_name__icontains=q) |
+            models.Q(username__icontains=q) |
+            models.Q(email__icontains=q)
+        )
+
+    if role:
+        qs = qs.filter(role=role)
+
+    if sector_id:
+        qs = qs.filter(group__zona__sector_id=sector_id)
+
+    if zona_id:
+        qs = qs.filter(group__zona_id=zona_id)
+
+    if group_id:
+        qs = qs.filter(group_id=group_id)
+
+    return qs
+
+
+@login_required
+def members_list(request):
+    if not _is_admin_like(request.user):
+        raise PermissionDenied("No tienes permisos para ver miembros.")
+
+    base_qs = User.objects.select_related("group__zona__sector").all().order_by(
+        "first_name", "last_name", "username"
+    )
+
+    qs = _apply_members_filters(request, base_qs)
+
+    # datos para filtros dependientes
+    sector_id = (request.GET.get("sector_id") or "").strip()
+    zona_id = (request.GET.get("zona_id") or "").strip()
+
+    sectors = Sector.objects.all().order_by("name")
+    zonas = Zona.objects.none()
+    grupos = Grupo.objects.none()
+
+    if sector_id:
+        zonas = Zona.objects.filter(sector_id=sector_id).order_by("name")
+
+    if zona_id:
+        grupos = Grupo.objects.filter(zona_id=zona_id).order_by("name")
+
+    context = {
+        "members": qs,
+        "q": (request.GET.get("q") or "").strip(),
+        "selected_role": (request.GET.get("role") or "").strip(),
+        "selected_sector_id": sector_id,
+        "selected_zona_id": zona_id,
+        "selected_group_id": (request.GET.get("group_id") or "").strip(),
+        "sectors": sectors,
+        "zonas": zonas,
+        "grupos": grupos,
+        "role_choices": User.ROLE_CHOICES,
+        "querystring": request.GET.urlencode(),  # para el botón export
+    }
+    return render(request, "accounts/members_list.html", context)
+
+
+@login_required
+def members_export(request):
+    if not _is_admin_like(request.user):
+        raise PermissionDenied("No tienes permisos para exportar miembros.")
+
+    base_qs = User.objects.select_related("group__zona__sector").all().order_by(
+        "first_name", "last_name", "username"
+    )
+    qs = _apply_members_filters(request, base_qs)
+
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="miembros.csv"'
+
+    # BOM para Excel (evita caracteres raros en acentos)
+    response.write("\ufeff")
+
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow([
+        "Nombre",
+        "Apellido",
+        "Username",
+        "RUT",
+        "Email",
+        "Rol",
+        "Activo",
+        "Fecha nacimiento",
+        "Edad",
+        "Sector",
+        "Zona",
+        "Grupo",
+        "Direccion",
+        "Fecha ingreso",
+        "Unico miembro familia",
+    ])
+
+    for u in qs:
+        sector_name = ""
+        zona_name = ""
+        grupo_name = ""
+        if u.group:
+            grupo_name = u.group.name or ""
+            if getattr(u.group, "zona", None):
+                zona_name = u.group.zona.name or ""
+                if getattr(u.group.zona, "sector", None):
+                    sector_name = u.group.zona.sector.name or ""
+
+        birth = getattr(u, "birth_date", None)  # si tu campo se llama distinto, cámbialo aquí
+        age = getattr(u, "age", None)  # si tienes @property age, perfecto
+
+        writer.writerow([
+            u.first_name or "",
+            u.last_name or "",
+            u.username or "",
+            getattr(u, "rut", "") or "",
+            u.email or "",
+            u.get_role_display() if hasattr(u, "get_role_display") else (u.role or ""),
+            "SI" if u.is_active else "NO",
+            birth.strftime("%Y-%m-%d") if birth else "",
+            age if age is not None else "",
+            sector_name,
+            zona_name,
+            grupo_name,
+            getattr(u, "address", "") or "",
+            getattr(u, "join_date", None).strftime("%Y-%m-%d") if getattr(u, "join_date", None) else "",
+            "SI" if getattr(u, "is_only_family_member", False) else "NO",
+        ])
+
+    return response
+
 
 @login_required
 def edit_member(request, user_id):
@@ -492,9 +657,29 @@ def edit_member(request, user_id):
             member.email = (request.POST.get("email") or "").strip()
             member.role = request.POST.get("role") or member.role
             member.is_active = True if request.POST.get("is_active") == "on" else False
+
+            # nuevos campos
+            member.address = (request.POST.get("address") or "").strip()
+            member.is_only_family_member = True if request.POST.get("is_only_family_member") == "on" else False
+            bd = (request.POST.get("birth_date") or "").strip()
+            if bd:
+                member.birth_date = timezone.datetime.strptime(bd, "%Y-%m-%d").date()
+            else:
+                member.birth_date = None
+
+            jd = (request.POST.get("join_date") or "").strip()
+            if jd:
+                member.join_date = timezone.datetime.strptime(jd, "%Y-%m-%d").date()
+            else:
+                member.join_date = None
+
+            gid = (request.POST.get("group_id") or "").strip()
+            member.group_id = int(gid) if gid else None
+
             member.save()
             messages.success(request, "✅ Datos del miembro actualizados.")
             return redirect("edit_member", user_id=member.id)
+
 
         # 2) Crear hogar si no existe y asignar miembro como primary
         if action == "create_household":
@@ -524,9 +709,12 @@ def edit_member(request, user_id):
                 return redirect("edit_member", user_id=member.id)
 
             # si ese usuario ya tiene hogar, lo impedimos (porque OneToOne)
-            if hasattr(u, "household_membership"):
+            if HouseholdMember.objects.filter(user=u).exists():
                 messages.error(request, "Ese usuario ya pertenece a otro hogar.")
                 return redirect("edit_member", user_id=member.id)
+
+
+
 
             HouseholdMember.objects.create(
                 household=current_household,
@@ -567,6 +755,12 @@ def edit_member(request, user_id):
             .order_by("-is_primary", "user__first_name", "user__last_name", "user__username")
         )
 
+    member_sector_id = None
+    member_zona_id = None
+    if getattr(member, "group", None) and member.group and member.group.zona and member.group.zona.sector:
+        member_zona_id = member.group.zona_id
+        member_sector_id = member.group.zona.sector_id
+
     return render(request, "accounts/edit_member.html", {
         "member": member,
         "household": current_household,
@@ -575,4 +769,368 @@ def edit_member(request, user_id):
         "q": q,
         "role_choices": User.ROLE_CHOICES,
         "rel_choices": HouseholdMember.REL_CHOICES,
+         "sectors": Sector.objects.all(),
+        "member_sector_id": member_sector_id,
+        "member_zona_id": member_zona_id,
+         
     })
+@login_required
+def ajax_zonas_by_sector(request):
+    sector_id = request.GET.get("sector_id")
+    zonas = []
+
+    if sector_id:
+        zonas = Zona.objects.filter(sector_id=sector_id).order_by("name")
+
+    data = [{"id": z.id, "name": z.name} for z in zonas]
+    return JsonResponse({"zonas": data})
+
+@login_required
+def ajax_grupos_by_zona(request):
+    zona_id = request.GET.get("zona_id")
+    grupos = []
+
+    if zona_id:
+        grupos = Grupo.objects.filter(zona_id=zona_id).order_by("name")
+
+    data = [{"id": g.id, "name": g.name} for g in grupos]
+    return JsonResponse({"grupos": data})
+
+@login_required
+def profile(request, user_id=None):
+    """
+    - /perfil/ => mi perfil (editable limitado)
+    - /miembros/<id>/perfil/ => admin/directiva pueden ver/editar otro
+    """
+    if user_id is None:
+        member = request.user
+    else:
+        member = get_object_or_404(User, id=user_id)
+        if not _is_admin_like(request.user):
+            raise PermissionDenied("No tienes permisos para ver este perfil.")
+
+    is_admin = _is_admin_like(request.user)  # admin/directiva (o tu helper)
+
+    if request.method == "POST":
+        # === Campos que cualquiera puede editar (solo si es su propio perfil o admin) ===
+        if member != request.user and not is_admin:
+            raise PermissionDenied("No puedes editar este perfil.")
+
+        member.first_name = (request.POST.get("first_name") or "").strip()
+        member.last_name  = (request.POST.get("last_name") or "").strip()
+        member.email      = (request.POST.get("email") or "").strip()
+        member.address    = (request.POST.get("address") or "").strip()
+
+        # birth_date (si lo tienes en el modelo)
+        bd = (request.POST.get("birth_date") or "").strip()
+        if hasattr(member, "birth_date"):
+            if bd:
+                member.birth_date = timezone.datetime.strptime(bd, "%Y-%m-%d").date()
+            else:
+                member.birth_date = None
+
+        # foto (si suben archivo)
+        if "profile_photo" in request.FILES:
+            member.profile_photo = request.FILES["profile_photo"]
+
+        # === Solo admin/directiva: rol + grupo + flags ===
+        if is_admin:
+            role = (request.POST.get("role") or "").strip()
+            if role:
+                member.role = role
+
+            # cascada: recibe group_id
+            gid = (request.POST.get("group_id") or "").strip()
+            member.group_id = int(gid) if gid else None
+
+            # flags (si existen)
+            if hasattr(member, "is_only_family_member"):
+                member.is_only_family_member = (request.POST.get("is_only_family_member") == "on")
+
+            if "is_active" in request.POST:
+                member.is_active = (request.POST.get("is_active") == "on")
+
+        member.save()
+        messages.success(request, "✅ Perfil actualizado.")
+        return redirect("profile" if user_id is None else "member_profile", user_id=member.id) if user_id else redirect("profile")
+
+    context = {
+        "member": member,
+        "is_admin": is_admin,
+        "role_choices": User.ROLE_CHOICES,
+        "grupos": Grupo.objects.select_related("zona__sector").all(),
+    }
+    return render(request, "accounts/profile.html", context)
+
+@login_required
+def my_profile(request):
+    return render(request, "accounts/my_profile.html", {"member": request.user})
+
+@login_required
+def edit_my_profile(request):
+    u = request.user
+
+    if request.method == "POST":
+        # campos permitidos para el usuario (tú decides)
+        u.first_name = (request.POST.get("first_name") or "").strip()
+        u.last_name  = (request.POST.get("last_name") or "").strip()
+        u.email      = (request.POST.get("email") or "").strip()
+        u.address    = (request.POST.get("address") or "").strip()
+
+        bd = (request.POST.get("birth_date") or "").strip()
+        u.birth_date = bd or None
+
+        # foto (input type=file)
+        if "profile_photo" in request.FILES:
+            u.profile_photo = request.FILES["profile_photo"]
+
+        u.save()
+        messages.success(request, "✅ Perfil actualizado.")
+        return redirect("my_profile")
+
+    return render(request, "accounts/edit_my_profile.html", {"member": u})
+
+
+@login_required
+def member_profile(request, user_id):
+    if not _is_admin_like(request.user):
+        raise PermissionDenied("No tienes permisos para ver perfiles de miembros.")
+
+    member = get_object_or_404(
+        User.objects.select_related("group__zona__sector"),
+        id=user_id
+    )
+    return render(request, "accounts/member_profile.html", {"member": member})
+
+def _is_admin_or_directiva(user):
+    return user.is_superuser or getattr(user, "role", None) in {user.ROLE_ADMIN, user.ROLE_DIRECTIVA}
+
+
+@login_required
+def manage_banners(request):
+    if not _is_admin_or_directiva(request.user):
+        raise PermissionDenied("No tienes permisos.")
+
+    banners = HomeBanner.objects.all().order_by("order", "-created_at")
+
+    context = {
+        "banners": banners,
+    }
+    return render(request, "accounts/banners/manage_banners.html", context)
+
+
+@login_required
+def create_banner(request):
+    if not _is_admin_or_directiva(request.user):
+        raise PermissionDenied("No tienes permisos.")
+
+    if request.method == "POST":
+        title = (request.POST.get("title") or "").strip()
+        subtitle = (request.POST.get("subtitle") or "").strip()
+        link_url = (request.POST.get("link_url") or "").strip()
+        order = request.POST.get("order") or "0"
+        is_active = True if request.POST.get("is_active") == "on" else False
+        image = request.FILES.get("image")
+
+        if not image:
+            messages.error(request, "Debes subir una imagen.")
+            return redirect("create_banner")
+
+        HomeBanner.objects.create(
+            title=title,
+            subtitle=subtitle,
+            link_url=link_url,
+            order=int(order),
+            is_active=is_active,
+            image=image,
+        )
+        messages.success(request, "✅ Banner creado.")
+        return redirect("manage_banners")
+
+    return render(request, "accounts/banners/banner_form.html", {"mode": "create"})
+
+
+@login_required
+def edit_banner(request, banner_id):
+    if not _is_admin_or_directiva(request.user):
+        raise PermissionDenied("No tienes permisos.")
+
+    banner = get_object_or_404(HomeBanner, id=banner_id)
+
+    if request.method == "POST":
+        banner.title = (request.POST.get("title") or "").strip()
+        banner.subtitle = (request.POST.get("subtitle") or "").strip()
+        banner.link_url = (request.POST.get("link_url") or "").strip()
+        banner.order = int(request.POST.get("order") or 0)
+        banner.is_active = True if request.POST.get("is_active") == "on" else False
+
+        new_image = request.FILES.get("image")
+        if new_image:
+            banner.image = new_image
+
+        banner.save()
+        messages.success(request, "✅ Banner actualizado.")
+        return redirect("manage_banners")
+
+    return render(
+        request,
+        "accounts/banners/banner_form.html",
+        {"mode": "edit", "banner": banner},
+    )
+
+
+@login_required
+def delete_banner(request, banner_id):
+    if not _is_admin_or_directiva(request.user):
+        raise PermissionDenied("No tienes permisos.")
+
+    banner = get_object_or_404(HomeBanner, id=banner_id)
+
+    if request.method == "POST":
+        banner.delete()
+        messages.success(request, "🗑️ Banner eliminado.")
+        return redirect("manage_banners")
+
+    return render(request, "accounts/banners/banner_delete.html", {"banner": banner})
+
+from django.shortcuts import render, redirect, get_object_or_404
+from django.core.exceptions import PermissionDenied
+from django.contrib import messages
+from django.utils import timezone
+from calendar import monthrange
+
+from .models import Event  # ya lo tienes
+
+
+@login_required
+def manage_events(request):
+    if not _is_admin_or_directiva(request.user):
+        raise PermissionDenied("No tienes permisos.")
+
+    today = timezone.now().date()
+    year = int(request.GET.get("y") or today.year)
+    month = int(request.GET.get("m") or today.month)
+
+    start = today.replace(year=year, month=month, day=1)
+    end_day = monthrange(year, month)[1]
+    end = today.replace(year=year, month=month, day=end_day)
+
+    events = (
+        Event.objects
+        .filter(date__range=[start, end])
+        .order_by("date", "time", "title")
+    )
+
+    return render(request, "accounts/events/manage_events.html", {
+        "events": events,
+        "year": year,
+        "month": month,
+    })
+
+
+@login_required
+def create_event(request):
+    if not _is_admin_or_directiva(request.user):
+        raise PermissionDenied("No tienes permisos.")
+
+    if request.method == "POST":
+        title = (request.POST.get("title") or "").strip()
+        description = (request.POST.get("description") or "").strip()
+        location = (request.POST.get("location") or "").strip()
+        price = (request.POST.get("price") or "").strip()
+        is_public = True if request.POST.get("is_public") == "on" else False
+
+        date_str = (request.POST.get("date") or "").strip()
+        time_str = (request.POST.get("time") or "").strip()
+
+        if not title or not date_str:
+            messages.error(request, "Título y fecha son obligatorios.")
+            return redirect("create_event")
+
+        try:
+            date_val = timezone.datetime.strptime(date_str, "%Y-%m-%d").date()
+        except Exception:
+            messages.error(request, "Fecha inválida.")
+            return redirect("create_event")
+
+        time_val = None
+        if time_str:
+            try:
+                time_val = timezone.datetime.strptime(time_str, "%H:%M").time()
+            except Exception:
+                messages.error(request, "Hora inválida (usa HH:MM).")
+                return redirect("create_event")
+
+        Event.objects.create(
+            title=title,
+            description=description,
+            location=location,
+            price=price,
+            date=date_val,
+            time=time_val,
+            is_public=is_public,
+            created_by=request.user,
+        )
+
+        messages.success(request, "✅ Actividad creada.")
+        return redirect("manage_events")
+
+    return render(request, "accounts/events/event_form.html", {"mode": "create"})
+
+
+@login_required
+def edit_event(request, event_id):
+    if not _is_admin_or_directiva(request.user):
+        raise PermissionDenied("No tienes permisos.")
+
+    ev = get_object_or_404(Event, id=event_id)
+
+    if request.method == "POST":
+        ev.title = (request.POST.get("title") or "").strip()
+        ev.description = (request.POST.get("description") or "").strip()
+        ev.location = (request.POST.get("location") or "").strip()
+        ev.price = (request.POST.get("price") or "").strip()
+        ev.is_public = True if request.POST.get("is_public") == "on" else False
+
+        date_str = (request.POST.get("date") or "").strip()
+        time_str = (request.POST.get("time") or "").strip()
+
+        if not ev.title or not date_str:
+            messages.error(request, "Título y fecha son obligatorios.")
+            return redirect("edit_event", event_id=ev.id)
+
+        try:
+            ev.date = timezone.datetime.strptime(date_str, "%Y-%m-%d").date()
+        except Exception:
+            messages.error(request, "Fecha inválida.")
+            return redirect("edit_event", event_id=ev.id)
+
+        if time_str:
+            try:
+                ev.time = timezone.datetime.strptime(time_str, "%H:%M").time()
+            except Exception:
+                messages.error(request, "Hora inválida (usa HH:MM).")
+                return redirect("edit_event", event_id=ev.id)
+        else:
+            ev.time = None
+
+        ev.save()
+        messages.success(request, "✅ Actividad actualizada.")
+        return redirect("manage_events")
+
+    return render(request, "accounts/events/event_form.html", {"mode": "edit", "event": ev})
+
+
+@login_required
+def delete_event(request, event_id):
+    if not _is_admin_or_directiva(request.user):
+        raise PermissionDenied("No tienes permisos.")
+
+    ev = get_object_or_404(Event, id=event_id)
+
+    if request.method == "POST":
+        ev.delete()
+        messages.success(request, "🗑️ Actividad eliminada.")
+        return redirect("manage_events")
+
+    return render(request, "accounts/events/event_delete.html", {"event": ev})

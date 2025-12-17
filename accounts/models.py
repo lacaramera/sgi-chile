@@ -1,16 +1,41 @@
 ﻿from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
-
-
-
+from django.db import transaction
 from decimal import Decimal
+from datetime import date
+
+
 
 class User(AbstractUser):
     first_name = models.CharField("nombre", max_length=150, blank=False)
     last_name  = models.CharField("apellido", max_length=150, blank=False)
 
     rut = models.CharField("RUT", max_length=12, unique=True)
+    address = models.CharField("Dirección", max_length=255, blank=True, default="")
+    join_date = models.DateField("Fecha de ingreso", null=True, blank=True)
+    is_only_family_member = models.BooleanField("Único miembro de su familia", default=False)
+
+    birth_date = models.DateField("Fecha de nacimiento", null=True, blank=True)
+    group = models.ForeignKey(
+        "Grupo",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="members",
+        verbose_name="Grupo",
+    
+    
+        
+    )
+    profile_photo = models.ImageField(
+    upload_to="avatars/",
+    blank=True,
+    null=True,
+    verbose_name="Foto de perfil",
+)
+
+
     # Nombres internos (valores que se guardan en la BD)
     ROLE_ADMIN = "admin"
     ROLE_DIRECTIVA = "directiva"
@@ -33,6 +58,17 @@ class User(AbstractUser):
         choices=ROLE_CHOICES,
         default=ROLE_MIEMBRO,
     )
+
+    @property
+    def age(self):
+        """Edad en años (None si no hay birth_date)."""
+        if not self.birth_date:
+            return None
+        today = timezone.now().date()
+        years = today.year - self.birth_date.year
+        if (today.month, today.day) < (self.birth_date.month, self.birth_date.day):
+            years -= 1
+        return years
 
     # ---- Helpers de permisos ----
 
@@ -70,6 +106,45 @@ class User(AbstractUser):
             self.ROLE_DIRECTIVA,
             self.ROLE_ADMIN,
         } or self.is_superuser
+    
+    def get_sector(self):
+        if self.group_id and self.group and self.group.zona_id and self.group.zona and self.group.zona.sector_id:
+            return self.group.zona.sector
+        return None
+
+
+class Sector(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class Zona(models.Model):
+    sector = models.ForeignKey(Sector, on_delete=models.CASCADE, related_name="zonas")
+    name = models.CharField(max_length=120)
+
+    class Meta:
+        unique_together = ("sector", "name")
+        ordering = ["sector__name", "name"]
+
+    def __str__(self):
+        return f"{self.sector} / {self.name}"
+
+
+class Grupo(models.Model):
+    zona = models.ForeignKey(Zona, on_delete=models.CASCADE, related_name="grupos")
+    name = models.CharField(max_length=120)
+
+    class Meta:
+        unique_together = ("zona", "name")
+        ordering = ["zona__sector__name", "zona__name", "name"]
+
+    def __str__(self):
+        return f"{self.zona} / {self.name}"
 
 class Household(models.Model):
     name = models.CharField(max_length=120, blank=True)  # ej: "Familia Pérez"
@@ -122,6 +197,21 @@ class Event(models.Model):
 
     def __str__(self):
         return f"{self.title} — {self.date}"
+    
+class HomeBanner(models.Model):
+    title = models.CharField(max_length=120, blank=True, default="")
+    subtitle = models.CharField(max_length=200, blank=True, default="")
+    image = models.ImageField(upload_to="home/banners/")
+    link_url = models.URLField(blank=True, default="")  # opcional: link externo
+    is_active = models.BooleanField(default=True)
+    order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "-created_at"]
+
+    def __str__(self):
+        return self.title or f"Banner #{self.id}"
 
 class Contribution(models.Model):
     """
@@ -178,9 +268,6 @@ class Contribution(models.Model):
         return f"{self.member.username} - {self.date} - {self.amount}"
 
 
-from django.db import models
-from django.utils import timezone
-from decimal import Decimal
 
 class ContributionReport(models.Model):
     """
@@ -252,75 +339,84 @@ class ContributionReport(models.Model):
     def __str__(self):
         return f"Informe {self.id} - {self.user.username} - {self.deposit_amount}"
 
+
+
     def approve(self, reviewer):
         """
         Aprueba el informe y crea contribuciones confirmadas.
         - Si hay distribution.splits => crea 1 Contribution por cada split (monto > 0).
         - Si NO hay splits => crea 1 Contribution para el usuario (total).
+        Devuelve la primera Contribution creada (compatibilidad).
         """
-        if self.status == self.STATUS_APPROVED:
+        # Solo permitir aprobar si está pendiente
+        if self.status != self.STATUS_PENDING:
             return None
-
-        created = []
 
         payload = self.distribution or {}
         splits = payload.get("splits") or []
 
-        # === Distribución familiar real ===
-        if splits:
-            for s in splits:
-                uid = s.get("user_id")
-                amt = s.get("amount")
+        created = []
 
-                if not uid or not amt:
-                    continue
+        with transaction.atomic():
+            # === Distribución familiar real ===
+            if splits:
+                for s in splits:
+                    uid = s.get("user_id")
+                    amt = s.get("amount")
 
-                try:
-                    u = User.objects.get(id=int(uid))
-                    amount = Decimal(str(amt))
-                except Exception:
-                    continue
+                    if uid is None or amt is None:
+                        continue
 
-                if amount <= 0:
-                    continue
+                    try:
+                        u = User.objects.get(id=int(uid))
+                    except User.DoesNotExist:
+                        continue
 
+                    try:
+                        amount = Decimal(str(amt))
+                    except Exception:
+                        continue
+
+                    if amount <= 0:
+                        continue
+
+                    created.append(
+                        Contribution.objects.create(
+                            member=u,
+                            date=self.deposit_date,
+                            amount=amount,
+                            contribution_type=Contribution.TYPE_REGULAR,
+                            note=(
+                                f"Aporte distribuido desde informe #{self.id} "
+                                f"(reportado por @{self.user.username})."
+                            ),
+                            is_confirmed=True,
+                            created_by=reviewer,
+                        )
+                    )
+
+            # === Sin distribución: aporte directo ===
+            else:
                 created.append(
                     Contribution.objects.create(
-                        member=u,
+                        member=self.user,
                         date=self.deposit_date,
-                        amount=amount,
+                        amount=self.deposit_amount,
                         contribution_type=Contribution.TYPE_REGULAR,
-                        note=(
-                            f"Aporte distribuido desde informe #{self.id} "
-                            f"(reportado por @{self.user.username})."
-                        ),
+                        note=f"Aporte informado vía web (informe #{self.id}).",
                         is_confirmed=True,
                         created_by=reviewer,
                     )
                 )
 
-        # === Sin distribución: aporte directo ===
-        else:
-            created.append(
-                Contribution.objects.create(
-                    member=self.user,
-                    date=self.deposit_date,
-                    amount=self.deposit_amount,
-                    contribution_type=Contribution.TYPE_REGULAR,
-                    note=f"Aporte informado vía web (informe #{self.id}).",
-                    is_confirmed=True,
-                    created_by=reviewer,
-                )
-            )
+            # Marcar informe como aprobado
+            self.status = self.STATUS_APPROVED
+            self.reviewed_by = reviewer
+            self.reviewed_at = timezone.now()
+            self.save(update_fields=["status", "reviewed_by", "reviewed_at"])
 
-        # === Marcar informe como aprobado ===
-        self.status = self.STATUS_APPROVED
-        self.reviewed_by = reviewer
-        self.reviewed_at = timezone.now()
-        self.save(update_fields=["status", "reviewed_by", "reviewed_at"])
-
-        # 🔑 Compatibilidad: devolvemos una sola contribución
         return created[0] if created else None
+
 
 
     def reject(self, reviewer, reason=""):
@@ -360,38 +456,4 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.title}"
-
-class Household(models.Model):
-    name = models.CharField(max_length=120, blank=True)  # ej: "Familia Wilson" (opcional)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return self.name or f"Hogar #{self.id}"
-
-
-class HouseholdMember(models.Model):
-    REL_HEAD = "head"
-    REL_SPOUSE = "spouse"
-    REL_CHILD = "child"
-    REL_SIBLING = "sibling"
-    REL_OTHER = "other"
-
-    REL_CHOICES = [
-        (REL_HEAD, "Jefe/a de hogar"),
-        (REL_SPOUSE, "Esposo/a"),
-        (REL_CHILD, "Hijo/a"),
-        (REL_SIBLING, "Hermano/a"),
-        (REL_OTHER, "Otro"),
-    ]
-
-    household = models.ForeignKey("Household", on_delete=models.CASCADE, related_name="memberships")
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="household_membership")
-    relationship = models.CharField(max_length=20, choices=REL_CHOICES, default=REL_OTHER)
-    is_primary = models.BooleanField(default=False)
-
-    class Meta:
-        unique_together = ("household", "user")
-
-    def __str__(self):
-        return f"{self.user.username} -> {self.household}"
 

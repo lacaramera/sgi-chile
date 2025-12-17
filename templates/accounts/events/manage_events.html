@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Gestionar actividades{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-4">
+
+  <div class="bg-white rounded-3xl shadow-sm px-8 py-5 border border-gray-100 flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-sky-800">Actividades del mes</h1>
+      <p class="text-sm text-gray-500">Mes: {{ month }}/{{ year }}</p>
+    </div>
+    <a href="{% url 'create_event' %}" class="px-5 py-2 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+      + Nueva actividad
+    </a>
+  </div>
+
+  <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+        <tr>
+          <th class="px-6 py-3 text-left">Título</th>
+          <th class="px-6 py-3 text-left">Fecha</th>
+          <th class="px-6 py-3 text-left">Hora</th>
+          <th class="px-6 py-3 text-left">Público</th>
+          <th class="px-6 py-3 text-right">Acciones</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for e in events %}
+        <tr>
+          <td class="px-6 py-3 font-medium">{{ e.title }}</td>
+          <td class="px-6 py-3">{{ e.date|date:"d/m/Y" }}</td>
+          <td class="px-6 py-3">{% if e.time %}{{ e.time|time:"H:i" }}{% else %}—{% endif %}</td>
+          <td class="px-6 py-3">{% if e.is_public %}Sí{% else %}No{% endif %}</td>
+          <td class="px-6 py-3 text-right">
+            <a class="px-3 py-1.5 rounded-full border text-sm hover:bg-gray-50" href="{% url 'edit_event' e.id %}">Editar</a>
+            <a class="px-3 py-1.5 rounded-full border text-sm hover:bg-gray-50" href="{% url 'delete_event' e.id %}">Eliminar</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="px-6 py-6 text-gray-500">No hay actividades este mes.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}

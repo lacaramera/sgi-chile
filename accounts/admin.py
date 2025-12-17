@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import User, Event, Contribution, ContributionReport, Notification
+from .models import User, Event, Contribution, ContributionReport, Notification, Sector, Zona, Grupo
 from django.utils.html import format_html
 from .utils import send_activation_email  # si ya lo tienes
 
@@ -52,3 +52,20 @@ class NotificationAdmin(admin.ModelAdmin):
     list_display = ("user", "title", "is_read", "created_at")
     list_filter = ("is_read", "created_at")
     search_fields = ("user__username", "title", "message")
+
+
+@admin.register(Sector)
+class SectorAdmin(admin.ModelAdmin):
+    search_fields = ("name",)
+
+@admin.register(Zona)
+class ZonaAdmin(admin.ModelAdmin):
+    list_display = ("name", "sector")
+    list_filter = ("sector",)
+    search_fields = ("name", "sector__name")
+
+@admin.register(Grupo)
+class GrupoAdmin(admin.ModelAdmin):
+    list_display = ("name", "zona")
+    list_filter = ("zona__sector", "zona")
+    search_fields = ("name", "zona__name", "zona__sector__name")

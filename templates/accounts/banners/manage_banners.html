@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Banners Home{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6">
+
+  <div class="bg-white rounded-3xl shadow-sm px-8 py-5 border border-gray-100 flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-sky-800">Banners del inicio</h1>
+      <p class="text-sm text-gray-500">Admin/Directiva: crea y ordena el carrusel.</p>
+    </div>
+    <a href="{% url 'create_banner' %}" class="px-5 py-2 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+      + Nuevo banner
+    </a>
+  </div>
+
+  {% if messages %}
+    <div class="space-y-2">
+      {% for m in messages %}
+        <div class="rounded-2xl px-4 py-3 text-sm {% if m.tags == 'success' %}bg-green-100 text-green-800 border border-green-200{% elif m.tags == 'error' %}bg-red-100 text-red-800 border border-red-200{% else %}bg-gray-100 text-gray-800 border border-gray-200{% endif %}">
+          {{ m }}
+        </div>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+        <tr>
+          <th class="px-6 py-3 text-left">Orden</th>
+          <th class="px-6 py-3 text-left">Título</th>
+          <th class="px-6 py-3 text-left">Activo</th>
+          <th class="px-6 py-3 text-right">Acciones</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for b in banners %}
+        <tr>
+          <td class="px-6 py-3">{{ b.order }}</td>
+          <td class="px-6 py-3">{{ b.title|default:"(Sin título)" }}</td>
+          <td class="px-6 py-3">{% if b.is_active %}✅{% else %}—{% endif %}</td>
+          <td class="px-6 py-3 text-right">
+            <a href="{% url 'edit_banner' b.id %}" class="px-4 py-2 rounded-full border border-gray-300 text-sm font-semibold hover:bg-gray-50">Editar</a>
+            <a href="{% url 'delete_banner' b.id %}" class="ml-2 px-4 py-2 rounded-full border border-red-300 text-sm font-semibold text-red-700 hover:bg-red-50">Eliminar</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4" class="px-6 py-6 text-gray-500">No hay banners.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}

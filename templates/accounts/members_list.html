@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Miembros{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+
+  <div class="bg-white rounded-3xl shadow-sm px-8 py-5 border border-gray-100 flex items-center justify-between">
+    <h1 class="text-2xl font-bold text-sky-800">Miembros</h1>
+    <div class="flex items-center gap-3">
+      <a href="{% url 'members_export' %}{% if querystring %}?{{ querystring }}{% endif %}"
+         class="px-5 py-2 rounded-full border border-gray-300 text-sm font-semibold hover:bg-gray-50">
+        Descargar CSV
+      </a>
+      <a href="{% url 'create_member' %}"
+         class="px-5 py-2 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+        + Crear miembro
+      </a>
+    </div>
+  </div>
+
+  <!-- FILTROS -->
+  <form method="get" class="bg-white rounded-3xl shadow-sm px-6 py-4 border border-gray-100 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+
+    <div class="md:col-span-2">
+      <label class="text-xs text-gray-500">Buscar</label>
+      <input name="q" value="{{ q }}" placeholder="Nombre, username, email..."
+             class="w-full rounded-full px-4 py-2 border border-gray-200 focus:ring-2 focus:ring-sky-200"/>
+    </div>
+
+    <div>
+      <label class="text-xs text-gray-500">Rol</label>
+      <select name="role" class="w-full rounded-full px-4 py-2 border border-gray-200">
+        <option value="">— Todos —</option>
+        {% for val, label in role_choices %}
+          <option value="{{ val }}" {% if selected_role == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="text-xs text-gray-500">Sector</label>
+      <select id="sectorSelect" name="sector_id" class="w-full rounded-full px-4 py-2 border border-gray-200">
+        <option value="">— Todos —</option>
+        {% for s in sectors %}
+          <option value="{{ s.id }}" {% if selected_sector_id == s.id|stringformat:"s" %}selected{% endif %}>
+            {{ s.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="text-xs text-gray-500">Zona</label>
+      <select id="zonaSelect" name="zona_id" class="w-full rounded-full px-4 py-2 border border-gray-200" {% if not selected_sector_id %}disabled{% endif %}>
+        <option value="">— Todas —</option>
+        {% for z in zonas %}
+          <option value="{{ z.id }}" {% if selected_zona_id == z.id|stringformat:"s" %}selected{% endif %}>
+            {{ z.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="text-xs text-gray-500">Grupo</label>
+      <select id="grupoSelect" name="group_id" class="w-full rounded-full px-4 py-2 border border-gray-200" {% if not selected_zona_id %}disabled{% endif %}>
+        <option value="">— Todos —</option>
+        {% for g in grupos %}
+          <option value="{{ g.id }}" {% if selected_group_id == g.id|stringformat:"s" %}selected{% endif %}>
+            {{ g.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="md:col-span-5 flex gap-3">
+      <button class="px-6 py-2 rounded-full bg-sky-600 text-white font-semibold hover:bg-sky-700">Aplicar</button>
+      <a href="{% url 'members_list' %}" class="px-6 py-2 rounded-full border border-gray-300 font-semibold hover:bg-gray-50">Limpiar</a>
+    </div>
+
+  </form>
+
+  <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+        <tr>
+          <th class="px-6 py-3 text-left">Nombre</th>
+          <th class="px-6 py-3 text-left">Edad</th>
+          <th class="px-6 py-3 text-left">Rol</th>
+          <th class="px-6 py-3 text-left">Sector</th>
+          <th class="px-6 py-3 text-left">Zona</th>
+          <th class="px-6 py-3 text-left">Grupo</th>
+          <th class="px-6 py-3 text-right">Acciones</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for u in members %}
+        <tr>
+          <td class="px-6 py-3">
+            <a href="{% url 'member_profile' u.id %}" class="font-semibold text-sky-700 hover:underline">
+              {{ u.first_name }} {{ u.last_name }}
+            </a>
+          </td>
+
+
+          <td class="px-6 py-3">
+            {% if u.age is not None %}
+              {{ u.age }}
+            {% else %}
+              <span class="text-gray-400">—</span>
+            {% endif %}
+          </td>
+
+          <td class="px-6 py-3">{{ u.get_role_display }}</td>
+
+          <td class="px-6 py-3">
+            {% with sec=u.get_sector %}
+              {% if sec %}
+                {{ sec.name }}
+              {% else %}
+                <span class="text-gray-400">Sin asignar</span>
+              {% endif %}
+            {% endwith %}
+          </td>
+
+          <td class="px-6 py-3">
+            {% if u.group and u.group.zona %}
+              {{ u.group.zona.name }}
+            {% else %}
+              <span class="text-gray-400">Sin asignar</span>
+            {% endif %}
+          </td>
+
+          <td class="px-6 py-3">
+            {% if u.group %}
+              {{ u.group.name }}
+            {% else %}
+              <span class="text-gray-400">Sin asignar</span>
+            {% endif %}
+          </td>
+
+          <td class="px-6 py-3 text-right">
+            <a href="{% url 'edit_member' u.id %}" class="px-4 py-2 rounded-full border border-gray-300 text-sm font-semibold hover:bg-gray-50">
+              Editar
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="px-6 py-6 text-gray-500">No hay miembros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const sectorSelect = document.getElementById("sectorSelect");
+  const zonaSelect = document.getElementById("zonaSelect");
+  const grupoSelect = document.getElementById("grupoSelect");
+
+  if (!sectorSelect || !zonaSelect || !grupoSelect) return;
+
+  const zonasUrlBase = "{% url 'ajax_zonas_by_sector' %}";
+  const gruposUrlBase = "{% url 'ajax_grupos_by_zona' %}";
+
+  sectorSelect.addEventListener("change", () => {
+    const sectorId = sectorSelect.value;
+
+    zonaSelect.innerHTML = '<option value="">— Todas —</option>';
+    grupoSelect.innerHTML = '<option value="">— Todos —</option>';
+    zonaSelect.disabled = true;
+    grupoSelect.disabled = true;
+
+    if (!sectorId) return;
+
+    fetch(`${zonasUrlBase}?sector_id=${sectorId}`)
+      .then(r => r.json())
+      .then(data => {
+        (data.zonas || []).forEach(z => {
+          zonaSelect.innerHTML += `<option value="${z.id}">${z.name}</option>`;
+        });
+        zonaSelect.disabled = false;
+      });
+  });
+
+  zonaSelect.addEventListener("change", () => {
+    const zonaId = zonaSelect.value;
+
+    grupoSelect.innerHTML = '<option value="">— Todos —</option>';
+    grupoSelect.disabled = true;
+
+    if (!zonaId) return;
+
+    fetch(`${gruposUrlBase}?zona_id=${zonaId}`)
+      .then(r => r.json())
+      .then(data => {
+        (data.grupos || []).forEach(g => {
+          grupoSelect.innerHTML += `<option value="${g.id}">${g.name}</option>`;
+        });
+        grupoSelect.disabled = false;
+      });
+  });
+})();
+</script>
+{% endblock %}

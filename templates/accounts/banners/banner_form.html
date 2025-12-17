@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == "create" %}Nuevo banner{% else %}Editar banner{% endif %}{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto bg-white rounded-3xl shadow-sm px-8 py-6 border border-gray-100 space-y-4">
+
+  <h1 class="text-2xl font-bold text-sky-800">
+    {% if mode == "create" %}Nuevo banner{% else %}Editar banner{% endif %}
+  </h1>
+
+  <form method="post" enctype="multipart/form-data" class="space-y-4">
+    {% csrf_token %}
+
+    <div>
+      <label class="block text-sm font-semibold mb-1">Título</label>
+      <input name="title" value="{{ banner.title|default:'' }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+    </div>
+
+    <div>
+      <label class="block text-sm font-semibold mb-1">Subtítulo</label>
+      <input name="subtitle" value="{{ banner.subtitle|default:'' }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+    </div>
+
+    <div>
+      <label class="block text-sm font-semibold mb-1">Link (opcional)</label>
+      <input name="link_url" value="{{ banner.link_url|default:'' }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-semibold mb-1">Orden</label>
+        <input type="number" name="order" value="{{ banner.order|default:0 }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+      </div>
+
+      <div class="flex items-center gap-2 mt-6">
+        <input id="is_active" type="checkbox" name="is_active" {% if banner.is_active or mode == "create" %}checked{% endif %} class="h-4 w-4"/>
+        <label for="is_active" class="text-sm font-semibold">Activo</label>
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-sm font-semibold mb-1">Imagen {% if mode == "edit" %}(si no subes, se mantiene){% endif %}</label>
+      <input type="file" name="image" accept="image/*" class="block w-full text-sm"/>
+      {% if mode == "edit" and banner.image %}
+        <div class="mt-3">
+          <img src="{{ banner.image.url }}" class="w-full max-h-64 object-cover rounded-2xl border"/>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="pt-2 flex gap-3">
+      <button class="px-8 py-2 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+        Guardar
+      </button>
+      <a href="{% url 'manage_banners' %}" class="px-8 py-2 rounded-full border border-gray-300 text-sm font-semibold hover:bg-gray-50">
+        Cancelar
+      </a>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

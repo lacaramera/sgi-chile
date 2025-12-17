@@ -2,49 +2,123 @@
 {% load static %}
 {% block title %}Inicio{% endblock %}
 {% block content %}
+
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-  <!-- Left: carousel (grande) -->
-  <div class="lg:col-span-2 bg-white rounded shadow p-4">
-    <h2 class="text-xl font-semibold mb-4">Carrusel / Noticias destacadas</h2>
-    <div id="carousel" class="w-full h-64 relative overflow-hidden rounded">
-      <img src="{% static 'img/carousel1.jpg' %}" class="carousel-item absolute inset-0 w-full h-64 object-cover opacity-100" />
-      <img src="{% static 'img/carousel2.jpg' %}" class="carousel-item absolute inset-0 w-full h-64 object-cover opacity-0" />
-      <img src="{% static 'img/carousel3.jpg' %}" class="carousel-item absolute inset-0 w-full h-64 object-cover opacity-0" />
+
+  <!-- Left: carrusel -->
+  <div class="lg:col-span-2 bg-white rounded-3xl shadow-sm p-5 border border-gray-100">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-xl font-bold text-sky-900">Carrusel / Noticias destacadas</h2>
+
+      {% if user.is_superuser or user.is_admin_sistema %}
+        <a href="{% url 'manage_banners' %}"
+           class="px-4 py-2 rounded-full bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700">
+          Gestionar banners
+        </a>
+      {% endif %}
     </div>
+
+    <div id="carousel" class="w-full h-64 relative overflow-hidden rounded-2xl">
+
+      {% if banners and banners|length > 0 %}
+        {% for b in banners %}
+          <a href="{{ b.link_url|default:'#' }}"
+             {% if b.link_url %}target="_blank"{% endif %}
+             class="carousel-item absolute inset-0 w-full h-64 transition-opacity duration-700 {% if forloop.first %}opacity-100{% else %}opacity-0{% endif %}">
+            <img src="{{ b.image.url }}" class="w-full h-64 object-cover" alt="{{ b.title|default:'Banner' }}" />
+
+            {% if b.title or b.subtitle %}
+              <div class="absolute inset-0 bg-black/25"></div>
+              <div class="absolute bottom-3 left-3 right-3 text-white">
+                {% if b.title %}<div class="text-lg font-extrabold leading-tight">{{ b.title }}</div>{% endif %}
+                {% if b.subtitle %}<div class="text-sm opacity-95">{{ b.subtitle }}</div>{% endif %}
+              </div>
+            {% endif %}
+          </a>
+        {% endfor %}
+      {% else %}
+        {% for img in fallback_images %}
+          <img src="{% static 'img/' %}{{ img }}"
+               class="carousel-item absolute inset-0 w-full h-64 object-cover transition-opacity duration-700 {% if forloop.first %}opacity-100{% else %}opacity-0{% endif %}" />
+        {% endfor %}
+      {% endif %}
+
+    </div>
+
+    <p class="text-xs text-gray-400 mt-2">
+      Tip: si el banner tiene link, al hacer click se abrirá.
+    </p>
   </div>
 
   <!-- Right: próximas actividades -->
-  <aside class="bg-white rounded shadow p-4">
-    <h3 class="text-lg font-semibold mb-3">Próximas actividades</h3>
+  <aside class="bg-white rounded-3xl shadow-sm p-5 border border-gray-100">
+    <div class="flex items-center justify-between mb-3">
+      <h3 class="text-lg font-bold text-sky-900">Próximas actividades</h3>
+
+      {% if user.is_superuser or user.is_admin_sistema %}
+        <a href="{% url 'manage_events' %}"
+           class="px-4 py-2 rounded-full bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700">
+          Gestionar actividades
+        </a>
+      {% endif %}
+    </div>
+
     <table class="w-full text-sm">
       <thead class="text-left text-gray-500 text-xs">
-        <tr><th class="py-1">Actividad</th><th class="py-1">Fecha</th></tr>
+        <tr>
+          <th class="py-2">Actividad</th>
+          <th class="py-2">Fecha</th>
+          <th class="py-2">Hora</th>
+          <th class="py-2">Lugar</th>
+        </tr>
       </thead>
       <tbody>
         {% for ev in upcoming %}
-        <tr class="border-t">
-          <td class="py-2">{{ ev.title }}</td>
+        <tr class="border-t align-top">
+          <td class="py-2 font-medium">{{ ev.title }}</td>
           <td class="py-2">{{ ev.date|date:"d M Y" }}</td>
+          <td class="py-2">
+            {% if ev.time %}
+              {{ ev.time|time:"H:i" }}
+            {% else %}
+              <span class="text-gray-400">—</span>
+            {% endif %}
+          </td>
+          <td class="py-2">
+            {% if ev.location %}
+              {{ ev.location }}
+            {% else %}
+              <span class="text-gray-400">—</span>
+            {% endif %}
+          </td>
         </tr>
         {% empty %}
-        <tr><td colspan="2" class="py-2 text-gray-500">No hay actividades próximas.</td></tr>
+        <tr><td colspan="4" class="py-2 text-gray-500">No hay actividades próximas.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </aside>
+
 </div>
 
 <script>
-  // slider simple: rota imágenes cada 3s
   (function(){
     const items = document.querySelectorAll('.carousel-item');
     if (!items.length) return;
+
     let idx = 0;
+    const intervalMs = 7000; // 7s, más suave
+
     setInterval(() => {
-      items[idx].classList.remove('opacity-100'); items[idx].classList.add('opacity-0');
+      items[idx].classList.remove('opacity-100');
+      items[idx].classList.add('opacity-0');
+
       idx = (idx + 1) % items.length;
-      items[idx].classList.remove('opacity-0'); items[idx].classList.add('opacity-100');
-    }, 3000);
+
+      items[idx].classList.remove('opacity-0');
+      items[idx].classList.add('opacity-100');
+    }, intervalMs);
   })();
 </script>
+
 {% endblock %}

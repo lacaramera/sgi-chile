@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == "edit" %}Editar{% else %}Crear{% endif %} actividad{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto bg-white rounded-3xl shadow-sm px-8 py-6 border border-gray-100">
+  <h1 class="text-2xl font-bold text-sky-800 mb-4">
+    {% if mode == "edit" %}Editar{% else %}Crear{% endif %} actividad
+  </h1>
+
+  <form method="post" class="space-y-4">
+    {% csrf_token %}
+
+    <div>
+      <label class="block text-sm font-semibold mb-1">Título *</label>
+      <input name="title" value="{{ event.title|default:'' }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-semibold mb-1">Fecha *</label>
+        <input type="date" name="date" value="{{ event.date|date:'Y-m-d' }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+      </div>
+      <div>
+        <label class="block text-sm font-semibold mb-1">Hora</label>
+        <input type="time" name="time" value="{% if event.time %}{{ event.time|time:'H:i' }}{% endif %}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-sm font-semibold mb-1">Lugar</label>
+      <input name="location" value="{{ event.location|default:'' }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+    </div>
+
+
+    <div>
+      <label class="block text-sm font-semibold mb-1">Descripción</label>
+      <textarea name="description" class="w-full rounded-2xl border border-gray-200 px-4 py-2" rows="4">{{ event.description|default:'' }}</textarea>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <input id="is_public" type="checkbox" name="is_public" {% if event and event.is_public %}checked{% endif %} class="h-4 w-4"/>
+      <label for="is_public" class="text-sm font-semibold">Visible para todos (público)</label>
+    </div>
+
+    <div class="pt-2 flex gap-3">
+      <button class="px-6 py-2 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+        Guardar
+      </button>
+      <a href="{% url 'manage_events' %}" class="px-6 py-2 rounded-full border text-sm font-semibold hover:bg-gray-50">
+        Cancelar
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

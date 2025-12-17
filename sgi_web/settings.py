@@ -27,6 +27,8 @@ INSTALLED_APPS = [
     'accounts',
 
 ]
+LOGOUT_REDIRECT_URL = "/accounts/login/"
+LOGIN_URL = "/accounts/login/"
 
 LOGIN_REDIRECT_URL = 'home'
 

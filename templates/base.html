@@ -42,7 +42,7 @@
       </a>
       <a href="{% url 'kofu' %}" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 3v18M3 12h18"/></svg>
-        Kofu
+        Contribución
       </a>
       {% if user.is_authenticated and user.is_admin_sistema %}
   <a href="{% url 'create_member' %}" data-close-on-click="true"
@@ -65,7 +65,7 @@
         Sector/Región
       </a>
       
-      <a href="#" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
+      <a href="{% url 'members_list' %}" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M16 7a4 4 0 11-8 0 4 4 0 018 0z"/><path d="M2 21v-2a4 4 0 014-4h12a4 4 0 014 4v2"/></svg>
         Miembros
       </a>
@@ -95,10 +95,16 @@
         <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20"/><path d="M2 12h20"/></svg>
         Help
       </a>
-      <a href="{% url 'logout' %}" class="flex items-center gap-3 px-3 py-3 rounded-md">
-        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M10 17l5-5-5-5"/><path d="M5 12h14"/></svg>
-        Log Out
-      </a>
+      <form method="post" action="{% url 'logout' %}">
+        {% csrf_token %}
+        <button type="submit" class="w-full flex items-center gap-3 px-3 py-3 rounded-md hover:bg-white/10">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+      <path d="M10 17l5-5-5-5"/><path d="M5 12h14"/>
+    </svg>
+    Log Out
+  </button>
+</form>
+
     </nav>
   </aside>
 
@@ -194,13 +200,24 @@
         <!-- AVATAR -->
         <div class="relative">
           <button id="btnAvatar" class="flex items-center gap-3 bg-white/10 hover:bg-white/15 p-1.5 rounded-full focus:outline-none">
-            <img src="{% static 'img/avatar_placeholder.png' %}" alt="avatar" class="w-10 h-10 rounded-full object-cover border-2 border-white"/>
+            {% if user.is_authenticated and user.profile_photo %}
+              <img src="{{ user.profile_photo.url }}" alt="avatar"
+                  class="w-10 h-10 rounded-full object-cover border-2 border-white"/>
+            {% else %}
+              <img src="{% static 'img/avatar_placeholder.png' %}" alt="avatar"
+                  class="w-10 h-10 rounded-full object-cover border-2 border-white"/>
+            {% endif %}
+
           </button>
 
           <div id="avatarMenu" class="origin-top-right right-0 mt-2 w-48 rounded-md shadow-lg bg-white text-gray-800 absolute hidden">
             <div class="py-2">
-              <a href="#" class="block px-4 py-2 text-sm hover:bg-gray-100">Mis datos</a>
+              <a href="{% url 'profile' %}" class="block px-4 py-2 text-sm hover:bg-gray-100">Mis datos</a>
               <a href="{% url 'dashboard' %}" class="block px-4 py-2 text-sm hover:bg-gray-100">Mi dashboard</a>
+              {% if user.is_superuser or user.role == 'admin' or user.role == 'directiva' %}
+                <a href="{% url 'manage_banners' %}" class="block px-4 py-2 text-sm hover:bg-gray-100">Gestionar banners</a>
+              {% endif %}
+
             </div>
             <div class="border-t"></div>
             <div class="p-2">

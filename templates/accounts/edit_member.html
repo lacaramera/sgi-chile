@@ -31,18 +31,23 @@
       <input type="hidden" name="action" value="save_user"/>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
         <div>
           <label class="block text-sm font-semibold mb-1">Nombre</label>
-          <input name="first_name" value="{{ member.first_name }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+          <input name="first_name" value="{{ member.first_name }}"
+                 class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
         </div>
+
         <div>
           <label class="block text-sm font-semibold mb-1">Apellido</label>
-          <input name="last_name" value="{{ member.last_name }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+          <input name="last_name" value="{{ member.last_name }}"
+                 class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
         </div>
 
         <div>
           <label class="block text-sm font-semibold mb-1">Email</label>
-          <input name="email" value="{{ member.email }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+          <input name="email" value="{{ member.email }}"
+                 class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
         </div>
 
         <div>
@@ -54,8 +59,65 @@
           </select>
         </div>
 
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold mb-1">Dirección</label>
+          <input name="address" value="{{ member.address }}"
+                 class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold mb-1">Fecha de nacimiento</label>
+          <input type="date" name="birth_date"
+                value="{{ member.birth_date|date:'Y-m-d' }}"
+                class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+        </div>
+
+
+        <div>
+          <label class="block text-sm font-semibold mb-1">Fecha de ingreso</label>
+          <input type="date" name="join_date" value="{{ member.join_date|date:'Y-m-d' }}"
+                 class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+        </div>
+
         <div class="flex items-center gap-2">
-          <input id="is_active" type="checkbox" name="is_active" {% if member.is_active %}checked{% endif %} class="h-4 w-4"/>
+          <input id="is_only_family_member" type="checkbox" name="is_only_family_member"
+                 {% if member.is_only_family_member %}checked{% endif %} class="h-4 w-4"/>
+          <label for="is_only_family_member" class="text-sm font-semibold">Único miembro de su familia</label>
+        </div>
+
+        <!-- ====== Encadenado: Sector -> Zona -> Grupo ====== -->
+        <div>
+          <label class="block text-sm font-semibold mb-1">Sector / Región</label>
+          <select id="sectorSelect" class="w-full rounded-2xl border border-gray-200 px-4 py-2">
+            <option value="">— Selecciona sector —</option>
+            {% for s in sectors %}
+              <option value="{{ s.id }}" {% if member_sector_id == s.id %}selected{% endif %}>
+                {{ s.name }}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-sm font-semibold mb-1">Zona</label>
+          <select id="zonaSelect" class="w-full rounded-2xl border border-gray-200 px-4 py-2" disabled>
+            <option value="">— Selecciona zona —</option>
+          </select>
+        </div>
+
+        <div class="md:col-span-2">
+          <label class="block text-sm font-semibold mb-1">Grupo</label>
+          <!-- ESTE ES EL ÚNICO QUE SE GUARDA EN BD -->
+          <select name="group_id" id="grupoSelect" class="w-full rounded-2xl border border-gray-200 px-4 py-2" disabled>
+            <option value="">— Selecciona grupo —</option>
+          </select>
+          <p class="text-xs text-gray-500 mt-1">* Elegir Grupo asigna automáticamente Zona y Sector.</p>
+        </div>
+        <!-- =============================================== -->
+
+        <div class="flex items-center gap-2">
+          <input id="is_active" type="checkbox" name="is_active"
+                 {% if member.is_active %}checked{% endif %} class="h-4 w-4"/>
           <label for="is_active" class="text-sm font-semibold">Activo</label>
         </div>
 
@@ -63,6 +125,7 @@
           <div><span class="font-semibold">Usuario:</span> {{ member.username }}</div>
           <div><span class="font-semibold">ID:</span> {{ member.id }}</div>
         </div>
+
       </div>
 
       <div class="pt-2">
@@ -136,8 +199,11 @@
         <h3 class="font-semibold text-gray-800 mb-2">Agregar miembro al hogar</h3>
 
         <form method="get" class="flex gap-2 mb-3">
-          <input name="q" value="{{ q }}" placeholder="Buscar por nombre o username..." class="flex-1 rounded-2xl border border-gray-200 px-4 py-2"/>
-          <button class="px-5 py-2 rounded-full bg-gray-800 text-white text-sm font-semibold hover:bg-black">Buscar</button>
+          <input name="q" value="{{ q }}" placeholder="Buscar por nombre o username..."
+                 class="flex-1 rounded-2xl border border-gray-200 px-4 py-2"/>
+          <button class="px-5 py-2 rounded-full bg-gray-800 text-white text-sm font-semibold hover:bg-black">
+            Buscar
+          </button>
         </form>
 
         {% if candidates %}
@@ -177,5 +243,87 @@
   </div>
 
 </div>
+
+<!-- ===== JS encadenado (AQUÍ VA) ===== -->
+<script>
+  const sectorSelect = document.getElementById("sectorSelect");
+  const zonaSelect   = document.getElementById("zonaSelect");
+  const grupoSelect  = document.getElementById("grupoSelect");
+
+  const preSector = "{{ member_sector_id|default:'' }}";
+  const preZona   = "{{ member_zona_id|default:'' }}";
+  const preGrupo  = "{{ member.group_id|default:'' }}";
+
+  function fillSelect(selectEl, items, placeholder) {
+    selectEl.innerHTML = "";
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = placeholder;
+    selectEl.appendChild(opt);
+
+    items.forEach(it => {
+      const o = document.createElement("option");
+      o.value = it.id;
+      o.textContent = it.name;
+      selectEl.appendChild(o);
+    });
+  }
+
+  function loadZonas(sectorId, selectedZonaId = "") {
+    fillSelect(zonaSelect, [], "— Selecciona zona —");
+    fillSelect(grupoSelect, [], "— Selecciona grupo —");
+    zonaSelect.disabled = true;
+    grupoSelect.disabled = true;
+
+    if (!sectorId) return;
+
+    fetch(`/accounts/ajax/zonas/?sector_id=${sectorId}`)
+      .then(r => r.json())
+      .then(data => {
+        fillSelect(zonaSelect, data.zonas || [], "— Selecciona zona —");
+        zonaSelect.disabled = false;
+        if (selectedZonaId) {
+          zonaSelect.value = selectedZonaId;
+        }
+      });
+  }
+
+  function loadGrupos(zonaId, selectedGrupoId = "") {
+    fillSelect(grupoSelect, [], "— Selecciona grupo —");
+    grupoSelect.disabled = true;
+
+    if (!zonaId) return;
+
+    fetch(`/accounts/ajax/grupos/?zona_id=${zonaId}`)
+      .then(r => r.json())
+      .then(data => {
+        fillSelect(grupoSelect, data.grupos || [], "— Selecciona grupo —");
+        grupoSelect.disabled = false;
+        if (selectedGrupoId) {
+          grupoSelect.value = selectedGrupoId;
+        }
+      });
+  }
+
+  sectorSelect.addEventListener("change", () => {
+    const sectorId = sectorSelect.value;
+    loadZonas(sectorId);
+  });
+
+  zonaSelect.addEventListener("change", () => {
+    const zonaId = zonaSelect.value;
+    loadGrupos(zonaId);
+  });
+
+  // Precarga si el usuario ya tiene grupo
+  if (preSector) {
+    sectorSelect.value = preSector;
+    loadZonas(preSector, preZona);
+    if (preZona) {
+      setTimeout(() => loadGrupos(preZona, preGrupo), 200);
+    }
+  }
+</script>
+<!-- ================================ -->
 
 {% endblock %}

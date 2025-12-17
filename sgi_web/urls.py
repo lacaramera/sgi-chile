@@ -7,7 +7,7 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', accounts_views.home, name='home'),
+    path("", accounts_views.home, name="home"),
     path('accounts/', include('django.contrib.auth.urls')),  # login/logout/password
     path('accounts/', include('accounts.urls')),             # dashboard, activate
     path('kofu/', accounts_views.kofu_view, name='kofu'),
@@ -19,6 +19,8 @@ urlpatterns = [
     path('kofu/activos/exportar/', accounts_views.kofu_active_members_export, name='kofu_active_members_export'),
     path("miembros/nuevo/", accounts_views.create_member, name="create_member"),
     path("miembros/<int:user_id>/editar/", accounts_views.edit_member, name="edit_member"),
+    path("miembros/", accounts_views.members_list, name="members_list"),
+    path("miembros/exportar/", accounts_views.members_export, name="members_export"),
 
 
 ]
