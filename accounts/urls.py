@@ -1,5 +1,6 @@
 from django.urls import path
 from . import views
+from .views import help_view
 
 urlpatterns = [
     path('dashboard/', views.dashboard, name='dashboard'),
@@ -18,6 +19,19 @@ urlpatterns = [
     path("home/actividades/nueva/", views.create_event, name="create_event"),
     path("home/actividades/<int:event_id>/editar/", views.edit_event, name="edit_event"),
     path("home/actividades/<int:event_id>/eliminar/", views.delete_event, name="delete_event"),
+    path("fortuna/", views.fortuna_home, name="fortuna_home"),
+    path("fortuna/material/", views.fortuna_material, name="fortuna_material"),
+    path("fortuna/ediciones/", views.fortuna_ediciones, name="fortuna_ediciones"),
+    path("fortuna/comprar/", views.fortuna_comprar, name="fortuna_comprar"),
+    path("fortuna/compradores/", views.fortuna_compradores, name="fortuna_compradores"),
+    path("fortuna/pdf/<int:issue_id>/", views.fortuna_pdf, name="fortuna_pdf"),
+    path("fortuna/compradores/export/", views.fortuna_compradores_export, name="fortuna_compradores_export"),
+    path("ayuda/", help_view, name="help"),
+    path("accounts/fortuna/admin/compras/", views.fortuna_admin_purchases, name="fortuna_admin_purchases"),
+    path("fortuna/solicitudes/", views.fortuna_admin_purchases, name="fortuna_admin_purchases"),
+    path("divisiones/", views.divisions_index, name="divisions_index"),
+    path("divisiones/<slug:division>/", views.division_home, name="division_home"),
+    
 
 
 ]

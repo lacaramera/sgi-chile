@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Acceso denegado{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto bg-white rounded-3xl shadow-sm px-8 py-6 border border-gray-100">
+  <h1 class="text-2xl font-bold text-red-700">Acceso denegado</h1>
+  <p class="text-gray-600 mt-2">
+    No apareces como comprador(a) de la edición actual{% if issue %} ({{ issue }}){% endif %}.
+  </p>
+  <p class="text-gray-600 mt-2">
+    Puedes comprarla desde “Comprar” y luego volver a intentar.
+  </p>
+
+  <div class="mt-6 flex gap-3">
+    <a href="{% url 'fortuna_comprar' %}" class="px-6 py-2 rounded-full bg-blue-600 text-white font-semibold hover:bg-blue-700">
+      Ir a Comprar
+    </a>
+    <a href="{% url 'fortuna_home' %}" class="px-6 py-2 rounded-full border font-semibold hover:bg-gray-50">
+      Volver
+    </a>
+  </div>
+</div>
+{% endblock %}

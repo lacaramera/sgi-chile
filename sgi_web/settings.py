@@ -19,12 +19,14 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    
 
     # terceros
     'rest_framework',
 
     # apps locales
-    'accounts',
+    
+    "accounts.apps.AccountsConfig",
 
 ]
 LOGOUT_REDIRECT_URL = "/accounts/login/"

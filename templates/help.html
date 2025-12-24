@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Ayuda{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto mt-10 space-y-6">
+
+  <div class="bg-white rounded-3xl shadow-sm px-8 py-6 border border-gray-100 text-center">
+    <h1 class="text-2xl font-bold text-sky-800">
+      ¿Necesitas ayuda?
+    </h1>
+
+    <p class="text-gray-600 mt-3">
+      Si tienes problemas con la plataforma o alguna duda,
+      puedes contactarte directamente con nosotros.
+    </p>
+  </div>
+
+  <div class="bg-white rounded-3xl shadow-sm px-8 py-6 border border-gray-100 space-y-4">
+
+    <!-- WhatsApp -->
+    <a href="https://wa.me/56950494019"
+       target="_blank"
+       class="flex items-center justify-center gap-2 w-full px-6 py-3 rounded-full bg-green-500 text-white font-semibold hover:bg-green-600">
+      📱 Contactar por WhatsApp
+    </a>
+
+    <!-- Correo -->
+    <a href="mailto:contacto@sgi-chile.cl"
+       class="flex items-center justify-center gap-2 w-full px-6 py-3 rounded-full border border-gray-300 font-semibold hover:bg-gray-50">
+      ✉️ Enviar correo
+    </a>
+
+    <p class="text-xs text-gray-500 text-center mt-2">
+      Horario de atención: Lunes a Viernes, 9:00 a 18:00 hrs.
+    </p>
+
+  </div>
+
+</div>
+{% endblock %}

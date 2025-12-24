@@ -1,4 +1,5 @@
-import csv, json
+import csv, json, logging
+logger = logging.getLogger(__name__)
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login
@@ -7,10 +8,10 @@ from django.utils.http import urlsafe_base64_decode
 from django.utils.encoding import force_str
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.forms import SetPasswordForm
-from .models import User, Event, HomeBanner, ContributionReport, Contribution, Notification, Household, HouseholdMember, Sector, Zona, Grupo
+from .models import User, Event, HomeBanner, ContributionReport, Contribution, Notification, Household, HouseholdMember, Sector, Zona, Grupo, FortunaIssue, FortunaPurchase, Profile, DivisionPost
 from decimal import Decimal, InvalidOperation
 from django.db.models import Sum, Count,  Q
-from django.http import HttpResponseForbidden, HttpResponse, JsonResponse
+from django.http import HttpResponseForbidden, HttpResponse, JsonResponse, FileResponse, Http404
 from .models import Sector, Zona, Grupo
 from django.core.mail import send_mail
 from django.conf import settings
@@ -20,6 +21,9 @@ from django.contrib import messages
 from django.db import models
 from django.template.loader import get_template
 from calendar import monthrange
+from django.views.decorators.clickjacking import xframe_options_sameorigin
+
+
 
 def home(request):
     today = timezone.now().date()
@@ -125,7 +129,7 @@ def kofu_report(request):
 
         # ✅ OJO: esto es lo correcto (IDs + montos)
         family_user_ids = request.POST.getlist("family_user_id[]")
-        family_amounts  = request.POST.getlist("family_amount[]")
+        family_amounts = request.POST.getlist("family_amount[]")
 
         errors = {}
 
@@ -198,14 +202,20 @@ def kofu_report(request):
                 break
 
             splits.append({"user_id": u.id, "amount": float(amt)})
-            lines.append(f"{u.first_name} {u.last_name} (@{u.username}): {amt}")
+
+            # ✅ CAMBIO: ya NO guardamos (@username)
+            lines.append(f"{u.first_name} {u.last_name}: {amt}")
+
             family_sum += amt
 
         # ✅ si no distribuyó nada, dejamos todo al mismo usuario
         if amount is not None and not splits:
             u = request.user
             splits = [{"user_id": u.id, "amount": float(amount)}]
-            lines = [f"{u.first_name} {u.last_name} (@{u.username}): {amount}"]
+
+            # ✅ CAMBIO: ya NO guardamos (@username)
+            lines = [f"{u.first_name} {u.last_name}: {amount}"]
+
             family_sum = amount
 
         # ✅ si distribuyó, debe cuadrar con el monto principal
@@ -235,9 +245,9 @@ def kofu_report(request):
                 deposit_amount=amount,
                 deposit_date=deposit_date,
                 receipt=receipt,
-                note=note,
+                note=note,  # ✅ comentario del usuario queda guardado aquí
                 distribution=distribution_payload,
-                family_distribution="\n".join(lines),
+                family_distribution="\n".join(lines),  # ✅ ahora sin username
                 status=ContributionReport.STATUS_PENDING,
             )
 
@@ -252,6 +262,7 @@ def kofu_report(request):
         context["note_value"] = ""
 
     return render(request, "kofu_report.html", context)
+
 
 
 
@@ -280,11 +291,14 @@ def kofu_active_members(request):
     """
     Miembros activos en contribución (Kofu).
     Activo = total contribuciones confirmadas >= THRESHOLD.
+    - admin/directiva: ven todos + ven montos
+    - responsables: ven SOLO su alcance (sector/zona/grupo) + NO ven montos
     """
     if not request.user.can_view_active_members():
         return HttpResponseForbidden("No tienes permiso para ver esta sección.")
 
     THRESHOLD = Decimal("12000.00")
+    q = (request.GET.get("q") or "").strip()
 
     qs = (
         Contribution.objects
@@ -293,10 +307,18 @@ def kofu_active_members(request):
             "member__id",
             "member__first_name",
             "member__last_name",
-            "member__role",  # ✅ rol (código)
+            "member__username",
+            "member__role",
             "member__group__zona__sector__name",
             "member__group__zona__name",
             "member__group__name",
+            "member__group__zona__sector_id",
+            "member__group__zona_id",
+            "member__group_id","member__division",
+            "member__is_division_national_leader",
+            "member__is_division_national_vice",
+            "member__national_division",
+
         )
         .annotate(
             total_amount=Sum("amount"),
@@ -306,27 +328,48 @@ def kofu_active_members(request):
         .order_by("-total_amount")
     )
 
+    # 🔎 buscador
+    if q:
+        qs = qs.filter(
+            Q(member__first_name__icontains=q) |
+            Q(member__last_name__icontains=q) |
+            Q(member__username__icontains=q)
+        )
+
+    # ✅ aplicar alcance por rol (sector/zona/grupo) derivado de user.group
+    scope = _user_scope_filters(request.user)
+    if scope is not None:
+        mapped = {}
+        for k, v in scope.items():
+            if k == "id__in":
+                mapped["member__id__in"] = v
+            else:
+                mapped[f"member__{k}"] = v
+        qs = qs.filter(**mapped)
+
     role_map = dict(User.ROLE_CHOICES)
 
-    active = list(qs)  # ✅ recién aquí lo convertimos a lista
+    active = list(qs)
     for m in active:
         m["role_label"] = role_map.get(m["member__role"], m["member__role"])
 
     context = {
         "active_members": active,
         "threshold": THRESHOLD,
+        "show_amounts": _can_see_kofu_amounts(request.user),
+        "q": q,
     }
     return render(request, "kofu_active_members.html", context)
+
 
 @login_required
 def kofu_admin_reports(request):
     """
-    Pantalla para responsables/directiva/admin:
+    Pantalla SOLO para admin/directiva:
     - Ver informes de contribución pendientes
     - Aprobar o rechazar
     """
-    # Solo roles con permiso especial (mismo criterio que miembros activos)
-    if not request.user.can_view_active_members():
+    if not _is_admin_or_directiva(request.user):
         return HttpResponseForbidden("No tienes permiso para ver esta sección.")
 
     message = None
@@ -346,10 +389,10 @@ def kofu_admin_reports(request):
                 if report.status == ContributionReport.STATUS_APPROVED:
                     error = "Este informe ya estaba aprobado."
                 else:
-                    contrib = report.approve(request.user)
+                    report.approve(request.user)
                     message = f"Informe #{report.id} aprobado y registrado como contribución."
 
-                    # === EMAIL al miembro ===
+                    # Email (best-effort)
                     try:
                         subject = "Contribución aprobada"
                         body = (
@@ -367,10 +410,8 @@ def kofu_admin_reports(request):
                             fail_silently=True,
                         )
                     except Exception:
-                        # en desarrollo, si algo falla, simplemente seguimos
                         pass
 
-                    # === NOTIFICACIÓN interna ===
                     Notification.objects.create(
                         user=report.user,
                         title="Contribución aprobada",
@@ -392,7 +433,7 @@ def kofu_admin_reports(request):
 
     processed_reports = ContributionReport.objects.exclude(
         status=ContributionReport.STATUS_PENDING
-    )[:20]  # últimos 20 para referencia
+    )[:20]
 
     context = {
         "pending_reports": pending_reports,
@@ -401,6 +442,7 @@ def kofu_admin_reports(request):
         "error": error,
     }
     return render(request, "kofu_admin_reports.html", context)
+
 
 
 @login_required
@@ -416,10 +458,11 @@ def notifications_center(request):
 @login_required
 def kofu_active_members_export(request):
     """
-    Exporta la lista de miembros activos en Kofu en formato CSV (para Excel).
+    Exporta lista de miembros activos en Kofu (CSV).
+    SOLO admin/directiva (porque incluye montos).
     """
-    if not request.user.can_view_active_members():
-        return HttpResponseForbidden("No tienes permiso para ver esta sección.")
+    if not _is_admin_or_directiva(request.user):
+        return HttpResponseForbidden("No tienes permiso para exportar este informe.")
 
     THRESHOLD = Decimal("12000.00")
 
@@ -456,8 +499,6 @@ def kofu_active_members_export(request):
 
     return response
 
-def _is_admin_like(user):
-    return user.is_authenticated and (user.is_superuser or user.is_staff or getattr(user, "is_admin_sistema", lambda: False)())
 
 @login_required
 def create_member(request):
@@ -657,6 +698,7 @@ def edit_member(request, user_id):
             member.email = (request.POST.get("email") or "").strip()
             member.role = request.POST.get("role") or member.role
             member.is_active = True if request.POST.get("is_active") == "on" else False
+            member.division = (request.POST.get("division") or "").strip()
 
             # nuevos campos
             member.address = (request.POST.get("address") or "").strip()
@@ -675,6 +717,13 @@ def edit_member(request, user_id):
 
             gid = (request.POST.get("group_id") or "").strip()
             member.group_id = int(gid) if gid else None
+            member.is_division_national_leader = (request.POST.get("is_division_national_leader") == "on")
+            member.is_division_national_vice = (request.POST.get("is_division_national_vice") == "on")
+            member.national_division = (request.POST.get("national_division") or "").strip() or None
+
+            # seguridad: si NO es RN ni Vice RN, limpiar national_division
+            if not (member.is_division_national_leader or member.is_division_national_vice):
+                member.national_division = None
 
             member.save()
             messages.success(request, "✅ Datos del miembro actualizados.")
@@ -906,6 +955,51 @@ def _is_admin_or_directiva(user):
     return user.is_superuser or getattr(user, "role", None) in {user.ROLE_ADMIN, user.ROLE_DIRECTIVA}
 
 
+def _is_admin_or_directiva(u):
+    return u.is_superuser or u.role in {u.ROLE_ADMIN, u.ROLE_DIRECTIVA}
+
+def _user_scope_filters(u):
+    """
+    Devuelve un dict para filtrar User por alcance (para responsables).
+    Si es admin/directiva => None (no filtrar).
+    Si es responsable_grupo => solo su group_id
+    Si es responsable_zona  => solo su zona (por group__zona_id)
+    Si es responsable_sector => solo su sector (por group__zona__sector_id)
+    """
+    if _is_admin_or_directiva(u):
+        return None
+
+    # si el usuario no tiene grupo asignado, no puede filtrar por alcance
+    if not u.group_id:
+        # para no romper, lo dejamos "solo él"
+        return {"id": u.id}
+
+    if u.role == u.ROLE_RESP_GRUPO:
+        return {"group_id": u.group_id}
+
+    if u.role == u.ROLE_RESP_ZONA:
+        # requiere que el user tenga zona (viene por su group)
+        if u.group and u.group.zona_id:
+            return {"group__zona_id": u.group.zona_id}
+        return {"id": u.id}
+
+    if u.role == u.ROLE_RESP_SECTOR:
+        # requiere sector (viene por group -> zona -> sector)
+        if u.group and u.group.zona and u.group.zona.sector_id:
+            return {"group__zona__sector_id": u.group.zona.sector_id}
+        return {"id": u.id}
+
+    # cualquier otro rol: por seguridad "solo él"
+    return {"id": u.id}
+
+
+
+def _can_see_kofu_amounts(user):
+    """Solo admin/directiva (y superuser) ve montos en Kofu activos."""
+    return _is_admin_or_directiva(user)
+
+
+
 @login_required
 def manage_banners(request):
     if not _is_admin_or_directiva(request.user):
@@ -1134,3 +1228,579 @@ def delete_event(request, event_id):
         return redirect("manage_events")
 
     return render(request, "accounts/events/event_delete.html", {"event": ev})
+
+@login_required
+def fortuna_home(request):
+    issue = FortunaIssue.objects.filter(is_active=True).first()
+    
+    context = {
+        "issue": issue,
+        "is_admin_directiva": _is_admin_or_directiva(request.user),
+        "cover_static": "img/fortuna/cover_nov_2025.png",
+        "can_view_active_members": request.user.can_view_active_members(),
+    }
+    return render(request, "accounts/fortuna/fortuna_home.html", context)
+
+    
+
+
+@login_required
+def fortuna_material(request):
+    issue = FortunaIssue.objects.filter(is_active=True).first()
+    if not issue:
+        logger.warning("FORTUNA: no active issue")
+        return render(request, "accounts/fortuna/fortuna_material_unavailable.html")
+
+    # ✅ Si no hay material cargado, no tiene sentido dejar entrar
+    has_material = bool(getattr(issue, "material_pdf", None)) or bool(getattr(issue, "material_url", ""))
+    if not has_material:
+        logger.warning(f"FORTUNA: issue {issue.code} has no material")
+        return render(request, "accounts/fortuna/fortuna_material_unavailable.html")
+
+    # buyer manual (Profile) + compra aprobada
+    profile, _ = Profile.objects.get_or_create(user=request.user)
+    is_buyer = profile.is_buyer
+
+    has_approved_purchase = FortunaPurchase.objects.filter(
+        issue=issue,
+        user=request.user,
+        status=FortunaPurchase.STATUS_APPROVED,
+    ).exists()
+
+    has_access = is_buyer or has_approved_purchase
+
+    logger.warning(
+        f"FORTUNA DEBUG user={request.user.username} "
+        f"is_buyer={is_buyer} approved_purchase={has_approved_purchase} "
+        f"issue={issue.code} has_access={has_access}"
+    )
+
+    if not has_access:
+        logger.warning(f"FORTUNA DENIED user={request.user.username}")
+        return render(
+            request,
+            "accounts/fortuna/fortuna_acces_denied.html",
+            {"issue": issue},
+            status=403,
+        )
+
+    logger.warning(f"FORTUNA ALLOWED user={request.user.username}")
+    return render(request, "accounts/fortuna/fortuna_material.html", {"issue": issue})
+
+
+@login_required
+def fortuna_ediciones(request):
+    context = {
+        "is_admin_directiva": _is_admin_or_directiva(request.user),
+    }
+    return render(request, "accounts/fortuna/fortuna_ediciones.html", context)
+
+
+@login_required
+def fortuna_comprar(request):
+    issue = _get_fortuna_current_issue()
+    if not issue:
+        return render(request, "accounts/fortuna/fortuna_comprar.html", {
+            "issue": None,
+            "price_clp": 4000,
+            "is_admin_directiva": _is_admin_or_directiva(request.user),
+        })
+
+    # si ya tiene aprobada => mostrar mensaje
+    existing = FortunaPurchase.objects.filter(issue=issue, user=request.user).first()
+
+    if existing and existing.status == FortunaPurchase.STATUS_APPROVED:
+        return render(request, "accounts/fortuna/fortuna_comprar.html", {
+            "issue": issue,
+            "price_clp": 4000,
+            "is_admin_directiva": _is_admin_or_directiva(request.user),
+            "already_approved": True,
+            "purchase": existing,
+        })
+
+    context = {
+        "issue": issue,
+        "price_clp": 4000,
+        "is_admin_directiva": _is_admin_or_directiva(request.user),
+        "purchase": existing,
+        "success": False,
+        "errors": {},
+    }
+
+    if request.method == "POST":
+        date_raw = (request.POST.get("deposit_date") or "").strip()
+        note = (request.POST.get("note") or "").strip()
+        receipt = request.FILES.get("receipt")
+
+        errors = {}
+
+        # fecha
+        deposit_date = None
+        try:
+            if not date_raw:
+                raise ValueError()
+            deposit_date = timezone.datetime.strptime(date_raw, "%Y-%m-%d").date()
+        except Exception:
+            errors["deposit_date"] = "Ingresa una fecha de depósito válida."
+
+        # comprobante
+        if not receipt:
+            errors["receipt"] = "Debes adjuntar el comprobante de depósito."
+
+        if errors:
+            context["errors"] = errors
+            context["date_value"] = date_raw
+            context["note_value"] = note
+            return render(request, "accounts/fortuna/fortuna_comprar.html", context)
+
+        # crear o actualizar solicitud (pending)
+        obj, created = FortunaPurchase.objects.get_or_create(
+            issue=issue,
+            user=request.user,
+            defaults={
+                "status": FortunaPurchase.STATUS_PENDING,
+            }
+        )
+        obj.status = FortunaPurchase.STATUS_PENDING
+        obj.deposit_date = deposit_date
+        obj.receipt = receipt
+        obj.note = note
+        obj.reject_reason = ""
+        obj.save()
+
+        context["success"] = True
+        context["purchase"] = obj
+        context["date_value"] = ""
+        context["note_value"] = ""
+
+    else:
+        context["date_value"] = ""
+        context["note_value"] = ""
+
+        # si fue rechazada antes, mostrar motivo y permitir reenviar
+        if existing:
+            context["previous_status"] = existing.status
+            context["reject_reason"] = existing.reject_reason
+
+    return render(request, "accounts/fortuna/fortuna_comprar.html", context)
+
+
+
+@login_required
+def fortuna_compradores(request):
+    # admin/directiva y responsables pueden ver, pero responsables con alcance
+    if not request.user.can_view_active_members():
+        raise PermissionDenied("No tienes permisos para ver compradores.")
+
+    issue = _get_fortuna_current_issue()
+    if not issue:
+        return render(request, "accounts/fortuna/fortuna_compradores.html", {
+            "issue": None,
+            "buyers": [],
+            "sectors": Sector.objects.all().order_by("name"),
+            "zonas": Zona.objects.none(),
+            "grupos": Grupo.objects.none(),
+            "q": "",
+            "selected_sector_id": "",
+            "selected_zona_id": "",
+            "selected_group_id": "",
+        })
+
+    approved_user_ids = FortunaPurchase.objects.filter(
+        issue=issue,
+        status=FortunaPurchase.STATUS_APPROVED
+    ).values_list("user_id", flat=True)
+
+    manual_buyer_ids = Profile.objects.filter(is_buyer=True).values_list("user_id", flat=True)
+
+    buyers_ids = set(approved_user_ids) | set(manual_buyer_ids)
+
+    base_qs = User.objects.select_related("group__zona__sector").filter(id__in=buyers_ids).order_by(
+        "first_name", "last_name", "username"
+    )
+
+    # ✅ aplicar alcance para responsables (admin/directiva => None)
+    scope = _user_scope_filters(request.user)
+    if scope is not None:
+        base_qs = base_qs.filter(**scope)
+
+    # --- filtros tipo members_list ---
+    q = (request.GET.get("q") or "").strip()
+    sector_id = (request.GET.get("sector_id") or "").strip()
+    zona_id = (request.GET.get("zona_id") or "").strip()
+    group_id = (request.GET.get("group_id") or "").strip()
+
+    qs = base_qs
+    if q:
+        qs = qs.filter(
+            Q(first_name__icontains=q) |
+            Q(last_name__icontains=q) |
+            Q(username__icontains=q) |
+            Q(email__icontains=q)
+        )
+
+    if sector_id:
+        qs = qs.filter(group__zona__sector_id=sector_id)
+
+    if zona_id:
+        qs = qs.filter(group__zona_id=zona_id)
+
+    if group_id:
+        qs = qs.filter(group_id=group_id)
+
+    sectors = Sector.objects.all().order_by("name")
+    zonas = Zona.objects.none()
+    grupos = Grupo.objects.none()
+
+    if sector_id:
+        zonas = Zona.objects.filter(sector_id=sector_id).order_by("name")
+    if zona_id:
+        grupos = Grupo.objects.filter(zona_id=zona_id).order_by("name")
+
+    return render(request, "accounts/fortuna/fortuna_compradores.html", {
+        "issue": issue,
+        "buyers": qs,
+        "q": q,
+        "sectors": sectors,
+        "zonas": zonas,
+        "grupos": grupos,
+        "selected_sector_id": sector_id,
+        "selected_zona_id": zona_id,
+        "selected_group_id": group_id,
+    })
+
+
+@login_required
+def fortuna_compradores_export(request):
+    if not _is_admin_or_directiva(request.user):
+        raise PermissionDenied("No tienes permisos para exportar compradores.")
+
+    issue = _get_fortuna_current_issue()
+    if not issue:
+        return HttpResponse("No hay ediciones Fortuna.", status=400)
+
+    approved_user_ids = FortunaPurchase.objects.filter(
+        issue=issue,
+        status=FortunaPurchase.STATUS_APPROVED
+    ).values_list("user_id", flat=True)
+
+    manual_buyer_ids = Profile.objects.filter(is_buyer=True).values_list("user_id", flat=True)
+    buyers_ids = set(approved_user_ids) | set(manual_buyer_ids)
+
+    qs = User.objects.select_related("group__zona__sector").filter(id__in=buyers_ids).order_by(
+        "first_name", "last_name", "username"
+    )
+
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="fortuna_compradores_{issue.code}.csv"'
+    response.write("\ufeff")
+
+    writer = csv.writer(response, delimiter=";")
+    writer.writerow(["Nombre", "Apellido", "Username", "Email", "Rol", "Sector", "Zona", "Grupo"])
+
+    for u in qs:
+        sec = u.get_sector().name if u.get_sector() else ""
+        zona = u.group.zona.name if (u.group and u.group.zona) else ""
+        grupo = u.group.name if u.group else ""
+        writer.writerow([
+            u.first_name or "",
+            u.last_name or "",
+            u.username or "",
+            u.email or "",
+            u.get_role_display() if hasattr(u, "get_role_display") else (u.role or ""),
+            sec, zona, grupo
+        ])
+
+    return response
+
+
+
+@login_required
+@xframe_options_sameorigin
+def fortuna_pdf(request, issue_id: int):
+    issue = get_object_or_404(FortunaIssue, id=issue_id)
+
+    # Debe existir PDF
+    if not issue.material_pdf:
+        raise Http404("No hay PDF para esta edición.")
+
+    # ✅ misma lógica de acceso que fortuna_material
+    profile, _ = Profile.objects.get_or_create(user=request.user)
+    is_buyer = profile.is_buyer
+
+    has_approved_purchase = FortunaPurchase.objects.filter(
+        issue=issue,
+        user=request.user,
+        status=FortunaPurchase.STATUS_APPROVED,
+    ).exists()
+
+    if not (is_buyer or has_approved_purchase):
+        raise PermissionDenied("No tienes acceso a este material.")
+
+    # Entregar archivo como stream
+    return FileResponse(issue.material_pdf.open("rb"), content_type="application/pdf")
+
+def _get_fortuna_current_issue():
+    # 1) activa
+    issue = FortunaIssue.objects.filter(is_active=True).first()
+    if issue:
+        return issue
+    # 2) fallback: la más nueva (por code)
+    return FortunaIssue.objects.order_by("-code").first()
+
+@login_required
+def help_view(request):
+    return render(request, "help.html")
+
+
+@login_required
+def fortuna_admin_purchases(request):
+    if not _is_admin_or_directiva(request.user):
+        raise PermissionDenied("No tienes permisos.")
+
+    issue = _get_fortuna_current_issue()
+
+    if request.method == "POST":
+        purchase_id = request.POST.get("purchase_id")
+        action = request.POST.get("action")
+        reason = (request.POST.get("reason") or "").strip()
+
+        p = get_object_or_404(FortunaPurchase, id=purchase_id)
+
+        if action == "approve":
+            p.status = FortunaPurchase.STATUS_APPROVED
+            p.reject_reason = ""
+            p.save()
+
+            # ✅ NOTIFICACIÓN INTERNA
+            Notification.objects.create(
+                user=p.user,
+                title="Compra Fortuna aprobada",
+                message=(
+                    f"Tu solicitud de compra para la edición {p.issue.code} fue aprobada. "
+                    "Ya tienes acceso al material."
+                ),
+            )
+
+            # ✅ EMAIL (opcional, igual que Kofu)
+            try:
+                if p.user.email:
+                    subject = "Compra Fortuna aprobada"
+                    body = (
+                        f"Hola {p.user.first_name or p.user.username},\n\n"
+                        f"Tu solicitud de compra para la edición {p.issue.code} fue aprobada.\n"
+                        "Ya tienes acceso al material.\n\n"
+                        "SGI Chile"
+                    )
+                    send_mail(
+                        subject,
+                        body,
+                        getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@sgi-chile.cl"),
+                        [p.user.email],
+                        fail_silently=True,
+                    )
+            except Exception:
+                pass
+
+            messages.success(
+                request,
+                f"✅ Compra aprobada para {p.user.first_name} {p.user.last_name}."
+            )
+
+        elif action == "reject":
+            p.status = FortunaPurchase.STATUS_REJECTED
+            p.reject_reason = reason
+            p.save()
+
+            # ✅ NOTIFICACIÓN INTERNA
+            msg = f"Tu solicitud de compra para la edición {p.issue.code} fue rechazada."
+            if reason:
+                msg += f" Motivo: {reason}"
+
+            Notification.objects.create(
+                user=p.user,
+                title="Compra Fortuna rechazada",
+                message=msg,
+            )
+
+            # ✅ EMAIL (opcional)
+            try:
+                if p.user.email:
+                    subject = "Compra Fortuna rechazada"
+                    body = (
+                        f"Hola {p.user.first_name or p.user.username},\n\n"
+                        f"Tu solicitud de compra para la edición {p.issue.code} fue rechazada.\n"
+                    )
+                    if reason:
+                        body += f"\nMotivo: {reason}\n"
+                    body += "\nSi crees que es un error, puedes volver a enviar tu solicitud.\n\nSGI Chile"
+
+                    send_mail(
+                        subject,
+                        body,
+                        getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@sgi-chile.cl"),
+                        [p.user.email],
+                        fail_silently=True,
+                    )
+            except Exception:
+                pass
+
+            messages.success(
+                request,
+                f"❌ Compra rechazada para {p.user.first_name} {p.user.last_name}."
+            )
+
+        else:
+            messages.error(request, "Acción inválida.")
+
+        # (Opcional) para evitar re-POST al refrescar
+        return redirect("fortuna_admin_purchases")
+
+    pending = (
+        FortunaPurchase.objects.select_related("user", "issue")
+        .filter(issue=issue, status=FortunaPurchase.STATUS_PENDING)
+        .order_by("-created_at")
+        if issue else []
+    )
+
+    processed = (
+        FortunaPurchase.objects.select_related("user", "issue")
+        .filter(issue=issue)
+        .exclude(status=FortunaPurchase.STATUS_PENDING)
+        .order_by("-created_at")[:20]
+        if issue else []
+    )
+
+    return render(request, "accounts/fortuna/fortuna_admin_purchases.html", {
+        "issue": issue,
+        "pending": pending,
+        "processed": processed,
+    })
+
+
+@login_required
+def fortuna_admin_requests(request):
+    if not _is_admin_or_directiva(request.user):
+        raise PermissionDenied("No tienes permisos.")
+
+    issue = _get_fortuna_current_issue()
+    if not issue:
+        return render(request, "accounts/fortuna/fortuna_admin_requests.html", {"issue": None, "requests": []})
+
+    qs = (
+        FortunaPurchase.objects
+        .select_related("user", "issue")
+        .filter(issue=issue)
+        .order_by("-created_at")
+    )
+
+    if request.method == "POST":
+        purchase_id = request.POST.get("purchase_id")
+        action = request.POST.get("action")
+        reason = (request.POST.get("reason") or "").strip()
+
+        purchase = get_object_or_404(FortunaPurchase, id=purchase_id)
+
+        if action == "approve":
+            purchase.status = FortunaPurchase.STATUS_APPROVED
+            purchase.reject_reason = ""
+            purchase.save()
+            messages.success(request, "✅ Solicitud aprobada.")
+        elif action == "reject":
+            purchase.status = FortunaPurchase.STATUS_REJECTED
+            purchase.reject_reason = reason
+            purchase.save()
+            messages.success(request, "❌ Solicitud rechazada.")
+        else:
+            messages.error(request, "Acción inválida.")
+
+        return redirect("fortuna_admin_requests")
+
+    return render(request, "accounts/fortuna/fortuna_admin_requests.html", {
+        "issue": issue,
+        "requests": qs,
+    })
+
+
+DIVS = {"djm": "DJM", "djf": "DJF", "caballeros": "Caballeros", "damas": "Damas"}
+
+def division_home(request, division):
+    division = (division or "").lower()
+    if division not in DIVS:
+        # simple: 404
+        from django.http import Http404
+        raise Http404("División no válida")
+
+    today = timezone.localdate()
+
+    # Próximas: por fecha futura o flag is_upcoming
+    upcoming = (DivisionPost.objects
+        .filter(division=division)
+        .filter(event_date__gte=today)
+        .order_by("event_date")[:5]
+    )
+
+    # “Aviso principal” (si quieres un destacado)
+    featured = (DivisionPost.objects
+        .filter(division=division, is_upcoming=True)
+        .order_by("event_date", "-created_at")
+        .first()
+    )
+
+    # Pasadas (últimas 10)
+    past = (DivisionPost.objects
+        .filter(division=division)
+        .filter(event_date__lt=today)
+        .order_by("-event_date", "-created_at")[:10]
+    )
+
+    # Noticias (sin fecha) si quieres usarlo así:
+    news = (DivisionPost.objects
+        .filter(division=division, event_date__isnull=True)
+        .order_by("-created_at")[:10]
+    )
+
+    context = {
+        "division_key": division,
+        "division_name": DIVS[division],
+        "featured": featured,
+        "upcoming": upcoming,
+        "past": past,
+        "news": news,
+    }
+    return render(request, "divisions/division_home.html", context)
+
+
+def divisions_index(request):
+    u = request.user
+
+    # admin/directiva: llévalo a una página tipo selector (opcional)
+    # PERO si todavía no tienes selector, puedes mandarlo a una lista simple o a DJM por defecto.
+    if u.is_admin_like():
+        # opción A: mostrar selector (recomendado)
+        return redirect("division_selector")  # si lo haces
+        # opción B: manda a una división por defecto
+        # return redirect("division_home", division="djm")
+
+    eff = u.effective_division_for_menu()
+    if not eff or eff not in DIVS:
+        return HttpResponseForbidden("No tienes división asignada.")
+    return redirect("division_home", division=eff)
+
+
+@login_required
+def my_division_redirect(request):
+    u = request.user
+
+    # Admin/Directiva: si no tienen división, los mandamos al listado general
+    if u.is_admin_sistema() and not u.division and not u.national_division:
+        return redirect("divisions_index")
+
+    # Prioridad: si es RN/Vice usa la national_division (porque administra esa división)
+    division = u.national_division or u.division
+
+    if not division:
+        messages.error(request, "No tienes división asignada todavía.")
+        return redirect("home")  # ajusta a tu dashboard si se llama distinto
+
+    return redirect("division_home", division=division)

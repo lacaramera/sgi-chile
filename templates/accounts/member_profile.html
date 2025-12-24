@@ -34,6 +34,11 @@
         <div class="text-sm text-gray-500">Rol: {{ member.get_role_display }}</div>
       </div>
     </div>
+    <div class="mt-3">
+  {% include "includes/division_badge.html" with u=member %}
+  </div>
+
+
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
       <div class="rounded-2xl border border-gray-200 p-4">

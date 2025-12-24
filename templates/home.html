@@ -23,8 +23,10 @@
       {% if banners and banners|length > 0 %}
         {% for b in banners %}
           <a href="{{ b.link_url|default:'#' }}"
-             {% if b.link_url %}target="_blank"{% endif %}
-             class="carousel-item absolute inset-0 w-full h-64 transition-opacity duration-700 {% if forloop.first %}opacity-100{% else %}opacity-0{% endif %}">
+            {% if b.link_url %}target="_blank"{% endif %}
+            class="carousel-item absolute inset-0 w-full h-64 transition-opacity duration-700
+                    {% if forloop.first %}opacity-100 pointer-events-auto{% else %}opacity-0 pointer-events-none{% endif %}">
+
             <img src="{{ b.image.url }}" class="w-full h-64 object-cover" alt="{{ b.title|default:'Banner' }}" />
 
             {% if b.title or b.subtitle %}
@@ -107,18 +109,27 @@
     if (!items.length) return;
 
     let idx = 0;
-    const intervalMs = 7000; // 7s, más suave
+
+    // asegura estado inicial correcto
+    items.forEach((el, i) => {
+      el.classList.toggle("opacity-100", i === 0);
+      el.classList.toggle("opacity-0", i !== 0);
+      el.classList.toggle("pointer-events-auto", i === 0);
+      el.classList.toggle("pointer-events-none", i !== 0);
+    });
 
     setInterval(() => {
-      items[idx].classList.remove('opacity-100');
-      items[idx].classList.add('opacity-0');
+      // ocultar actual (y quitar click)
+      items[idx].classList.remove('opacity-100', 'pointer-events-auto');
+      items[idx].classList.add('opacity-0', 'pointer-events-none');
 
+      // mostrar siguiente (y permitir click)
       idx = (idx + 1) % items.length;
-
-      items[idx].classList.remove('opacity-0');
-      items[idx].classList.add('opacity-100');
-    }, intervalMs);
+      items[idx].classList.remove('opacity-0', 'pointer-events-none');
+      items[idx].classList.add('opacity-100', 'pointer-events-auto');
+    }, 5000);
   })();
 </script>
+
 
 {% endblock %}

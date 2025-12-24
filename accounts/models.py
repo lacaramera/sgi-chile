@@ -4,6 +4,9 @@ from django.utils import timezone
 from django.db import transaction
 from decimal import Decimal
 from datetime import date
+from django.conf import settings
+from django.contrib.auth import get_user_model
+
 
 
 
@@ -17,6 +20,7 @@ class User(AbstractUser):
     is_only_family_member = models.BooleanField("Único miembro de su familia", default=False)
 
     birth_date = models.DateField("Fecha de nacimiento", null=True, blank=True)
+
     group = models.ForeignKey(
         "Grupo",
         null=True,
@@ -24,19 +28,67 @@ class User(AbstractUser):
         on_delete=models.SET_NULL,
         related_name="members",
         verbose_name="Grupo",
-    
-    
-        
     )
+
     profile_photo = models.ImageField(
-    upload_to="avatars/",
-    blank=True,
-    null=True,
-    verbose_name="Foto de perfil",
-)
+        upload_to="avatars/",
+        blank=True,
+        null=True,
+        verbose_name="Foto de perfil",
+    )
 
+    # -------------------------
+    # División (pertenencia)
+    # -------------------------
+    DIV_DJM = "djm"
+    DIV_DJF = "djf"
+    DIV_CABALLEROS = "caballeros"
+    DIV_DAMAS = "damas"
 
-    # Nombres internos (valores que se guardan en la BD)
+    DIVISION_CHOICES = [
+        (DIV_DJM, "División Juvenil Masculina (DJM)"),
+        (DIV_DJF, "División Juvenil Femenina (DJF)"),
+        (DIV_CABALLEROS, "División Caballeros"),
+        (DIV_DAMAS, "División Damas"),
+    ]
+
+    division = models.CharField(
+        "División",
+        max_length=20,
+        choices=DIVISION_CHOICES,
+        blank=True,
+        null=True,
+    )
+
+    # -------------------------
+    # Rol nacional por división
+    # -------------------------
+    is_division_national_leader = models.BooleanField(
+        "Responsable nacional de división",
+        default=False,
+    )
+
+    is_division_national_vice = models.BooleanField(
+        "Vice responsable nacional de división",
+        default=False,
+    )
+
+    national_division = models.CharField(
+        "División nacional que lidera",
+        max_length=20,
+        choices=DIVISION_CHOICES,
+        blank=True,
+        null=True,
+        help_text="Si es responsable/vice nacional, indica qué división lidera (DJM/DJF/Caballeros/Damas).",
+    )
+
+    # (opcional) Si ya no lo usas, puedes eliminar este campo.
+    # Si lo mantienes, OK, pero no lo uses para permisos.
+    division_national_role = models.CharField(max_length=20, blank=True, default="")
+
+    # -------------------------
+    # Roles del sistema
+    # -------------------------
     ROLE_ADMIN = "admin"
     ROLE_DIRECTIVA = "directiva"
     ROLE_RESP_SECTOR = "resp_sector"
@@ -59,9 +111,11 @@ class User(AbstractUser):
         default=ROLE_MIEMBRO,
     )
 
+    # -------------------------
+    # Props / Helpers
+    # -------------------------
     @property
     def age(self):
-        """Edad en años (None si no hay birth_date)."""
         if not self.birth_date:
             return None
         today = timezone.now().date()
@@ -69,8 +123,6 @@ class User(AbstractUser):
         if (today.month, today.day) < (self.birth_date.month, self.birth_date.day):
             years -= 1
         return years
-
-    # ---- Helpers de permisos ----
 
     def is_miembro(self):
         return self.role == self.ROLE_MIEMBRO
@@ -89,16 +141,13 @@ class User(AbstractUser):
 
     def is_admin_sistema(self):
         # superuser de Django o admin/directiva
-        return self.is_superuser or self.role in {
-            self.ROLE_ADMIN,
-            self.ROLE_DIRECTIVA,
-        }
+        return self.is_superuser or self.role in {self.ROLE_ADMIN, self.ROLE_DIRECTIVA}
+
+    # ✅ Alias más claro para usar en templates / permisos
+    def is_admin_like(self):
+        return self.is_admin_sistema()
 
     def can_view_active_members(self):
-        """
-        Permiso para ver 'Miembros activos' en Kofu.
-        Desde responsable de grupo hacia arriba.
-        """
         return self.role in {
             self.ROLE_RESP_GRUPO,
             self.ROLE_RESP_ZONA,
@@ -106,11 +155,66 @@ class User(AbstractUser):
             self.ROLE_DIRECTIVA,
             self.ROLE_ADMIN,
         } or self.is_superuser
-    
+
     def get_sector(self):
         if self.group_id and self.group and self.group.zona_id and self.group.zona and self.group.zona.sector_id:
             return self.group.zona.sector
         return None
+
+    # -------------------------
+    # División nacional helpers
+    # -------------------------
+    def is_national_division_lead(self):
+        return bool(self.is_division_national_leader and self.national_division)
+
+    def is_national_division_vice(self):
+        return bool(self.is_division_national_vice and self.national_division)
+
+    def is_national_division_role(self):
+        return self.is_national_division_lead() or self.is_national_division_vice()
+
+    # -------------------------
+    # ✅ Helpers para el menú "Divisiones"
+    # -------------------------
+    def effective_division_for_menu(self):
+        """
+        División que debe ver en el menú:
+        - si es RN/Vice RN -> national_division
+        - sino -> division (pertenencia)
+        """
+        if self.is_national_division_role():
+            return (self.national_division or "").lower() or None
+        return (self.division or "").lower() or None
+
+    def can_view_division(self, division_key: str) -> bool:
+        """
+        Quién puede ver una división:
+        - admin/directiva/superuser: todas
+        - RN/Vice RN: su national_division
+        - miembro normal: su division
+        """
+        division_key = (division_key or "").lower()
+        if self.is_admin_like():
+            return True
+
+        eff = self.effective_division_for_menu()
+        return bool(eff and eff == division_key)
+
+    def can_manage_division_posts(self, division_key: str) -> bool:
+        """
+        Quién puede administrar publicaciones:
+        - admin_like: todas
+        - RN/Vice RN: solo su national_division
+        """
+        division_key = (division_key or "").lower()
+        if self.is_admin_like():
+            return True
+
+        if self.is_national_division_role():
+            return (self.national_division or "").lower() == division_key
+
+        return False
+
 
 
 class Sector(models.Model):
@@ -357,6 +461,9 @@ class ContributionReport(models.Model):
 
         created = []
 
+        # ✅ nombre completo del que reportó (self.user)
+        reporter_name = f"{self.user.first_name} {self.user.last_name}".strip() or self.user.username
+
         with transaction.atomic():
             # === Distribución familiar real ===
             if splits:
@@ -388,7 +495,7 @@ class ContributionReport(models.Model):
                             contribution_type=Contribution.TYPE_REGULAR,
                             note=(
                                 f"Aporte distribuido desde informe #{self.id} "
-                                f"(reportado por @{self.user.username})."
+                                f"(reportado por {reporter_name})."
                             ),
                             is_confirmed=True,
                             created_by=reviewer,
@@ -416,6 +523,7 @@ class ContributionReport(models.Model):
             self.save(update_fields=["status", "reviewed_by", "reviewed_at"])
 
         return created[0] if created else None
+
 
 
 
@@ -456,4 +564,91 @@ class Notification(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.title}"
+    
 
+
+class FortunaIssue(models.Model):
+    code = models.CharField(max_length=7, unique=True)
+    title = models.CharField(max_length=200, blank=True)
+    cover_image = models.ImageField(upload_to="fortuna/covers/", blank=True, null=True)
+
+    # ✅ Nuevo: PDF subido desde admin
+    material_pdf = models.FileField(upload_to="fortuna/pdfs/", blank=True, null=True)
+
+    # ✅ Deja esto por ahora (compatibilidad)
+    material_url = models.URLField(blank=True)
+
+    is_active = models.BooleanField(default=False)
+    is_public_archive = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-code"]
+
+    def __str__(self):
+        return self.title or f"Fortuna {self.code}"
+
+
+
+class FortunaPurchase(models.Model):
+    issue = models.ForeignKey(FortunaIssue, on_delete=models.CASCADE, related_name="purchases")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="fortuna_purchases")
+
+    STATUS_PENDING = "pending"
+    STATUS_APPROVED = "approved"
+    STATUS_REJECTED = "rejected"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pendiente"),
+        (STATUS_APPROVED, "Aprobada"),
+        (STATUS_REJECTED, "Rechazada"),
+    ]
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+    deposit_date = models.DateField(null=True, blank=True, verbose_name="Fecha de depósito")
+    receipt = models.FileField(upload_to="fortuna/receipts/", null=True, blank=True, verbose_name="Comprobante")
+    note = models.TextField(blank=True, default="", verbose_name="Comentario")
+    reject_reason = models.TextField(blank=True, default="", verbose_name="Motivo rechazo")
+
+    class Meta:
+        unique_together = ("issue", "user")  # 1 solicitud por edición
+
+    
+
+    def __str__(self):
+        return f"{self.user} - {self.issue} ({self.status})"
+
+
+class Profile(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="profile")
+    is_buyer = models.BooleanField(default=False)
+
+    def __str__(self):
+        return self.user.username
+
+class DivisionPost(models.Model):
+    DIVISION_CHOICES = [
+        ("djm", "DJM"),
+        ("djf", "DJF"),
+        ("caballeros", "Caballeros"),
+        ("damas", "Damas"),
+    ]
+
+    division = models.CharField(max_length=20, choices=DIVISION_CHOICES)
+    title = models.CharField(max_length=120)
+    description = models.TextField(blank=True)
+
+    # Si es actividad con fecha:
+    event_date = models.DateField(null=True, blank=True)
+    is_upcoming = models.BooleanField(default=False)  # marcar "aviso" principal
+
+    image = models.ImageField(upload_to="division_posts/", null=True, blank=True)
+
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.get_division_display()} - {self.title}"

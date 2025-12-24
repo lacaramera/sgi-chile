@@ -1,0 +1,47 @@
+{# templates/includes/division_badge.html #}
+{# Recibe: u (User) #}
+
+<div class="flex flex-wrap items-center gap-2 mt-2">
+
+  {# División #}
+  {% if u.division %}
+    <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold
+                 bg-sky-50 text-sky-800 border border-sky-200">
+      <span class="w-2 h-2 rounded-full bg-sky-500"></span>
+      División:
+      {% if u.division == "djm" %}DJM
+      {% elif u.division == "djf" %}DJF
+      {% elif u.division == "caballeros" %}Caballeros
+      {% elif u.division == "damas" %}Damas
+      {% else %}{{ u.division }}{% endif %}
+    </span>
+  {% else %}
+    <span class="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold
+                 bg-gray-50 text-gray-600 border border-gray-200">
+      División: —
+    </span>
+  {% endif %}
+
+  {# Responsable/Vice nacional #}
+  {% if u.is_division_national_leader or u.is_division_national_vice %}
+    <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold
+                 bg-amber-50 text-amber-900 border border-amber-200">
+      <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7l3-7z"/>
+      </svg>
+
+      {% if u.is_division_national_leader %}Responsable nacional{% else %}Vice responsable nacional{% endif %}
+      —
+      {% if u.national_division %}
+        {% if u.national_division == "djm" %}DJM
+        {% elif u.national_division == "djf" %}DJF
+        {% elif u.national_division == "caballeros" %}Caballeros
+        {% elif u.national_division == "damas" %}Damas
+        {% else %}{{ u.national_division }}{% endif %}
+      {% else %}
+        (sin definir)
+      {% endif %}
+    </span>
+  {% endif %}
+
+</div>

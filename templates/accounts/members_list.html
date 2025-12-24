@@ -88,6 +88,7 @@
           <th class="px-6 py-3 text-left">Nombre</th>
           <th class="px-6 py-3 text-left">Edad</th>
           <th class="px-6 py-3 text-left">Rol</th>
+          <th class="px-6 py-3 text-left">División</th>
           <th class="px-6 py-3 text-left">Sector</th>
           <th class="px-6 py-3 text-left">Zona</th>
           <th class="px-6 py-3 text-left">Grupo</th>
@@ -113,6 +114,11 @@
           </td>
 
           <td class="px-6 py-3">{{ u.get_role_display }}</td>
+          <td class="px-6 py-3">
+            {% include "includes/division_cell.html" with division=u.division national_division=u.national_division is_division_national_leader=u.is_division_national_leader is_division_national_vice=u.is_division_national_vice %}
+
+
+          </td>
 
           <td class="px-6 py-3">
             {% with sec=u.get_sector %}
@@ -147,7 +153,7 @@
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="7" class="px-6 py-6 text-gray-500">No hay miembros.</td></tr>
+        <tr><td colspan="8" class="px-6 py-6 text-gray-500">No hay miembros.</td></tr>
         {% endfor %}
       </tbody>
     </table>

@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}Compradores Fortuna{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+
+  <!-- HEADER -->
+  <div class="bg-white rounded-3xl shadow-sm px-8 py-5 border border-gray-100 flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-sky-800">Compradores Fortuna</h1>
+      {% if issue %}
+        <p class="text-sm text-gray-500 mt-1">
+          Edición: {{ issue.title }} ({{ issue.code }})
+        </p>
+      {% else %}
+        <p class="text-sm text-gray-500 mt-1">No hay ediciones creadas.</p>
+      {% endif %}
+    </div>
+
+    {% if issue %}
+      <a href="{% url 'fortuna_compradores_export' %}"
+         class="px-5 py-2 rounded-full border border-gray-300 text-sm font-semibold hover:bg-gray-50">
+        Descargar CSV
+      </a>
+    {% endif %}
+  </div>
+
+  <!-- FILTROS -->
+  <form method="get"
+        class="bg-white rounded-3xl shadow-sm px-6 py-4 border border-gray-100 grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
+
+    <div class="md:col-span-2">
+      <label class="text-xs text-gray-500">Buscar</label>
+      <input name="q" value="{{ q }}" placeholder="Nombre, username, email..."
+             class="w-full rounded-full px-4 py-2 border border-gray-200"/>
+    </div>
+
+    <div>
+      <label class="text-xs text-gray-500">Sector</label>
+      <select id="sectorSelect" name="sector_id"
+              class="w-full rounded-full px-4 py-2 border border-gray-200">
+        <option value="">— Todos —</option>
+        {% for s in sectors %}
+          <option value="{{ s.id }}"
+            {% if selected_sector_id == s.id|stringformat:"s" %}selected{% endif %}>
+            {{ s.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="text-xs text-gray-500">Zona</label>
+      <select id="zonaSelect" name="zona_id"
+              class="w-full rounded-full px-4 py-2 border border-gray-200"
+              {% if not selected_sector_id %}disabled{% endif %}>
+        <option value="">— Todas —</option>
+        {% for z in zonas %}
+          <option value="{{ z.id }}"
+            {% if selected_zona_id == z.id|stringformat:"s" %}selected{% endif %}>
+            {{ z.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div>
+      <label class="text-xs text-gray-500">Grupo</label>
+      <select id="grupoSelect" name="group_id"
+              class="w-full rounded-full px-4 py-2 border border-gray-200"
+              {% if not selected_zona_id %}disabled{% endif %}>
+        <option value="">— Todos —</option>
+        {% for g in grupos %}
+          <option value="{{ g.id }}"
+            {% if selected_group_id == g.id|stringformat:"s" %}selected{% endif %}>
+            {{ g.name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="md:col-span-5 flex gap-3">
+      <button class="px-6 py-2 rounded-full bg-sky-600 text-white font-semibold hover:bg-sky-700">
+        Aplicar
+      </button>
+      <a href="{% url 'fortuna_compradores' %}"
+         class="px-6 py-2 rounded-full border border-gray-300 font-semibold hover:bg-gray-50">
+        Limpiar
+      </a>
+    </div>
+  </form>
+
+  <!-- TABLA -->
+  <div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-gray-50 text-gray-600 text-xs uppercase">
+        <tr>
+          <th class="px-6 py-3 text-left">Nombre</th>
+          <th class="px-6 py-3 text-left">Edad</th>
+          <th class="px-6 py-3 text-left">Rol</th>
+          <th class="px-6 py-3 text-left">División</th>
+          <th class="px-6 py-3 text-left">Sector</th>
+          <th class="px-6 py-3 text-left">Zona</th>
+          <th class="px-6 py-3 text-left">Grupo</th>
+          <th class="px-6 py-3 text-right">Acciones</th>
+        </tr>
+      </thead>
+
+      <tbody class="divide-y">
+        {% for u in buyers %}
+        <tr>
+          <td class="px-6 py-3">
+            <a href="{% url 'member_profile' u.id %}"
+               class="font-semibold text-sky-700 hover:underline">
+              {{ u.first_name }} {{ u.last_name }}
+            </a>
+          </td>
+
+          <td class="px-6 py-3">
+            {% if u.age is not None %}
+              {{ u.age }}
+            {% else %}
+              <span class="text-gray-400">—</span>
+            {% endif %}
+          </td>
+
+          <td class="px-6 py-3">{{ u.get_role_display }}</td>
+
+          <!-- DIVISIÓN (INLINE, SIN INCLUDE) -->
+          <td class="px-6 py-3">
+            {% with div=u.division|default:"" nd=u.national_division|default:"" %}
+              {% if u.is_division_national_leader or u.is_division_national_vice %}
+                <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold
+                             bg-amber-50 text-amber-900 border border-amber-200">
+                  {% if u.is_division_national_leader %}RN{% else %}Vice RN{% endif %} —
+                  {% if nd == "djm" %}DJM
+                  {% elif nd == "djf" %}DJF
+                  {% elif nd == "caballeros" %}Caballeros
+                  {% elif nd == "damas" %}Damas
+                  {% else %}—{% endif %}
+                </span>
+
+                <div class="mt-1">
+                  <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold
+                               bg-sky-50 text-sky-800 border border-sky-200">
+                    {% if div == "djm" %}DJM
+                    {% elif div == "djf" %}DJF
+                    {% elif div == "caballeros" %}Caballeros
+                    {% elif div == "damas" %}Damas
+                    {% else %}—{% endif %}
+                  </span>
+                </div>
+              {% else %}
+                <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold
+                             bg-sky-50 text-sky-800 border border-sky-200">
+                  {% if div == "djm" %}DJM
+                  {% elif div == "djf" %}DJF
+                  {% elif div == "caballeros" %}Caballeros
+                  {% elif div == "damas" %}Damas
+                  {% else %}—{% endif %}
+                </span>
+              {% endif %}
+            {% endwith %}
+          </td>
+
+          <td class="px-6 py-3">
+            {% with sec=u.get_sector %}
+              {% if sec %}{{ sec.name }}{% else %}<span class="text-gray-400">Sin asignar</span>{% endif %}
+            {% endwith %}
+          </td>
+
+          <td class="px-6 py-3">
+            {% if u.group and u.group.zona %}
+              {{ u.group.zona.name }}
+            {% else %}
+              <span class="text-gray-400">Sin asignar</span>
+            {% endif %}
+          </td>
+
+          <td class="px-6 py-3">
+            {% if u.group %}
+              {{ u.group.name }}
+            {% else %}
+              <span class="text-gray-400">Sin asignar</span>
+            {% endif %}
+          </td>
+
+          <td class="px-6 py-3 text-right">
+            <a href="{% url 'edit_member' u.id %}"
+               class="px-4 py-2 rounded-full border border-gray-300 text-sm font-semibold hover:bg-gray-50">
+              Editar
+            </a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr>
+          <td colspan="8" class="px-6 py-6 text-gray-500">
+            No hay compradores para esta edición.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}

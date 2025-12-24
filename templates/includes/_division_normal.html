@@ -1,0 +1,16 @@
+{# templates/includes/_division_normal.html #}
+{% if div %}
+  {% with div_key=div|lower %}
+    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-sky-50 text-sky-800 border border-sky-200 shadow-sm">
+      {% if div_key == "djm" %}DJM
+      {% elif div_key == "djf" %}DJF
+      {% elif div_key == "caballeros" %}Caballeros
+      {% elif div_key == "damas" %}Damas
+      {% else %}{{ div }}{% endif %}
+    </span>
+  {% endwith %}
+{% else %}
+  <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-gray-50 text-gray-700 border border-gray-200">
+    —
+  </span>
+{% endif %}

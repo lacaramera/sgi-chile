@@ -40,6 +40,7 @@
               <th class="py-2 text-left">Monto</th>
               <th class="py-2 text-left">Comprobante</th>
               <th class="py-2 text-left">Distribución familia</th>
+              <th class="py-2 text-left">Comentario</th>
               <th class="py-2 text-left">Acciones</th>
             </tr>
           </thead>
@@ -47,12 +48,15 @@
           {% for r in pending_reports %}
             <tr class="border-b last:border-0 align-top">
               <td class="py-2">#{{ r.id }}</td>
+
               <td class="py-2">
-                {{ r.user.first_name }} {{ r.user.last_name }}<br>
-                <span class="text-xs text-gray-500">{{ r.user.username }}</span>
+                {{ r.user.first_name }} {{ r.user.last_name }}
               </td>
+
               <td class="py-2">{{ r.deposit_date|date:"d/m/Y" }}</td>
+
               <td class="py-2">${{ r.deposit_amount }}</td>
+
               <td class="py-2">
                 {% if r.receipt %}
                   <a href="{{ r.receipt.url }}" target="_blank" class="text-sky-600 underline text-xs">
@@ -62,9 +66,15 @@
                   <span class="text-gray-400 text-xs">Sin archivo</span>
                 {% endif %}
               </td>
+
               <td class="py-2 text-xs whitespace-pre-line max-w-xs">
                 {{ r.family_distribution|default:"(sin detalle)" }}
               </td>
+
+              <td class="py-2 text-xs text-gray-600 whitespace-pre-line max-w-xs">
+                {{ r.note|default:"-" }}
+              </td>
+
               <td class="py-2">
                 <form method="post" class="space-y-2">
                   {% csrf_token %}
@@ -96,7 +106,7 @@
     {% endif %}
   </div>
 
-  <!-- INFORMES PROCESADOS (últimos) -->
+  <!-- INFORMES PROCESADOS -->
   <div class="bg-white rounded-2xl shadow p-4">
     <h2 class="text-lg font-semibold mb-3 text-gray-800">Últimos informes procesados</h2>
 
@@ -110,6 +120,7 @@
               <th class="py-2 text-left">Fecha dep.</th>
               <th class="py-2 text-left">Monto</th>
               <th class="py-2 text-left">Estado</th>
+              <th class="py-2 text-left">Comentario</th>
               <th class="py-2 text-left">Revisado por</th>
               <th class="py-2 text-left">Fecha revisión</th>
             </tr>
@@ -118,11 +129,15 @@
           {% for r in processed_reports %}
             <tr class="border-b last:border-0">
               <td class="py-2">#{{ r.id }}</td>
+
               <td class="py-2">
                 {{ r.user.first_name }} {{ r.user.last_name }}
               </td>
+
               <td class="py-2">{{ r.deposit_date|date:"d/m/Y" }}</td>
+
               <td class="py-2">${{ r.deposit_amount }}</td>
+
               <td class="py-2">
                 {% if r.status == 'approved' %}
                   <span class="text-green-600 font-semibold text-xs">Aprobado</span>
@@ -132,6 +147,11 @@
                   <span class="text-gray-500 text-xs">{{ r.get_status_display }}</span>
                 {% endif %}
               </td>
+
+              <td class="py-2 text-xs text-gray-600 whitespace-pre-line max-w-xs">
+                {{ r.note|default:"-" }}
+              </td>
+
               <td class="py-2 text-xs">
                 {% if r.reviewed_by %}
                   {{ r.reviewed_by.first_name }} {{ r.reviewed_by.last_name }}
@@ -139,6 +159,7 @@
                   -
                 {% endif %}
               </td>
+
               <td class="py-2 text-xs">
                 {% if r.reviewed_at %}
                   {{ r.reviewed_at|date:"d/m/Y H:i" }}

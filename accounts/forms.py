@@ -17,7 +17,11 @@ class MemberCreateForm(UserCreationForm):
             "username", "rut", "first_name", "last_name", "email",
             "role", "is_active","birth_date",
             "address", "join_date", "is_only_family_member",
-            "group",
+            "group","division",
+            "is_division_national_leader",
+            "is_division_national_vice",
+            "national_division",
+
         )
         widgets = {
             "join_date": forms.DateInput(attrs={"type": "date"}),
@@ -63,7 +67,10 @@ class MemberEditForm(forms.ModelForm):
 
     class Meta:
         model = User
-        fields = ["first_name", "last_name", "email", "role", "is_active"]
+        fields = ["first_name", "last_name", "email", "role", "is_active","division",
+        "is_division_national_leader",
+        "is_division_national_vice",
+        "national_division",]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

@@ -65,6 +65,29 @@
         <label class="text-sm font-semibold">Rol</label>
         {{ form.role }}
       </div>
+      <div>
+        <label class="text-sm font-semibold">División</label>
+        {{ form.division }}
+      </div>
+
+      <div class="flex items-center gap-2 mt-6">
+        {{ form.is_division_national_leader }}
+        <span class="text-sm">Responsable nacional</span>
+      </div>
+
+      <div class="flex items-center gap-2 mt-6">
+        {{ form.is_division_national_vice }}
+        <span class="text-sm">Vice responsable nacional</span>
+      </div>
+
+      <div class="md:col-span-2">
+        <label class="text-sm font-semibold">División nacional que lidera</label>
+        {{ form.national_division }}
+        <p class="text-xs text-gray-500 mt-1">
+          * Solo aplica si marcaste Responsable/Vice nacional.
+        </p>
+      </div>
+
 
       <div class="flex items-center gap-2 mt-6">
         {{ form.is_active }}

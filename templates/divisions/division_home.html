@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}División {{ division_name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+
+  <div class="bg-white rounded-3xl shadow-sm px-8 py-5 border border-gray-100 flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-sky-800">División {{ division_name }}</h1>
+      <p class="text-sm text-gray-500">Avisos, actividades y noticias de la división.</p>
+    </div>
+  </div>
+
+  {% if featured %}
+  <div class="bg-amber-50 border border-amber-200 rounded-3xl p-6">
+    <div class="text-xs font-bold text-amber-900">AVISO DESTACADO</div>
+    <div class="text-xl font-bold text-gray-900 mt-1">{{ featured.title }}</div>
+    {% if featured.event_date %}
+      <div class="text-sm text-gray-700 mt-1">Fecha: {{ featured.event_date|date:"d/m/Y" }}</div>
+    {% endif %}
+    {% if featured.description %}
+      <p class="text-sm text-gray-700 mt-3">{{ featured.description }}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
+      <h2 class="text-lg font-bold text-gray-800">Próximas actividades</h2>
+      <div class="mt-4 space-y-3">
+        {% for p in upcoming %}
+          <div class="rounded-2xl border border-gray-200 p-4">
+            <div class="font-semibold text-gray-900">{{ p.title }}</div>
+            {% if p.event_date %}
+              <div class="text-sm text-gray-500">{{ p.event_date|date:"d/m/Y" }}</div>
+            {% endif %}
+            {% if p.description %}
+              <div class="text-sm text-gray-700 mt-2">{{ p.description }}</div>
+            {% endif %}
+          </div>
+        {% empty %}
+          <div class="text-sm text-gray-500">No hay actividades próximas.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
+      <h2 class="text-lg font-bold text-gray-800">Noticias / avisos</h2>
+      <div class="mt-4 space-y-3">
+        {% for n in news %}
+          <div class="rounded-2xl border border-gray-200 p-4">
+            <div class="font-semibold text-gray-900">{{ n.title }}</div>
+            {% if n.description %}
+              <div class="text-sm text-gray-700 mt-2">{{ n.description }}</div>
+            {% endif %}
+          </div>
+        {% empty %}
+          <div class="text-sm text-gray-500">No hay noticias todavía.</div>
+        {% endfor %}
+      </div>
+    </div>
+
+  </div>
+
+  <div class="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
+    <h2 class="text-lg font-bold text-gray-800">Actividades pasadas</h2>
+
+    <div class="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+      {% for p in past %}
+        <div class="rounded-2xl border border-gray-200 overflow-hidden">
+          {% if p.image %}
+            <img src="{{ p.image.url }}" class="w-full h-48 object-cover" alt="foto">
+          {% endif %}
+          <div class="p-4">
+            <div class="font-semibold text-gray-900">{{ p.title }}</div>
+            {% if p.event_date %}
+              <div class="text-sm text-gray-500">{{ p.event_date|date:"d/m/Y" }}</div>
+            {% endif %}
+            {% if p.description %}
+              <div class="text-sm text-gray-700 mt-2">{{ p.description }}</div>
+            {% endif %}
+          </div>
+        </div>
+      {% empty %}
+        <div class="text-sm text-gray-500">Aún no hay registros de actividades pasadas.</div>
+      {% endfor %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}

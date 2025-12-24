@@ -1,0 +1,37 @@
+{# templates/includes/division_cell.html #}
+{# Recibe: division, national_division, is_division_national_leader, is_division_national_vice #}
+
+{% with div=division|default:"" nd=national_division|default:"" %}
+  {% if is_division_national_leader or is_division_national_vice %}
+    <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold
+                 bg-amber-50 text-amber-900 border border-amber-200">
+      {% if is_division_national_leader %}RN{% else %}Vice RN{% endif %} —
+      {% if nd == "djm" %}DJM
+      {% elif nd == "djf" %}DJF
+      {% elif nd == "caballeros" %}Caballeros
+      {% elif nd == "damas" %}Damas
+      {% else %}—{% endif %}
+    </span>
+
+    <div class="mt-1">
+      <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold
+                   bg-sky-50 text-sky-800 border border-sky-200">
+        {% if div == "djm" %}DJM
+        {% elif div == "djf" %}DJF
+        {% elif div == "caballeros" %}Caballeros
+        {% elif div == "damas" %}Damas
+        {% else %}—{% endif %}
+      </span>
+    </div>
+
+  {% else %}
+    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold
+                 bg-sky-50 text-sky-800 border border-sky-200">
+      {% if div == "djm" %}DJM
+      {% elif div == "djf" %}DJF
+      {% elif div == "caballeros" %}Caballeros
+      {% elif div == "damas" %}Damas
+      {% else %}—{% endif %}
+    </span>
+  {% endif %}
+{% endwith %}
