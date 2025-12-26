@@ -1,27 +1,36 @@
 {% extends "base.html" %}
-{% block title %}División {{ division_name }}{% endblock %}
+{% block title %}{{ division_title }}{% endblock %}
 
 {% block content %}
 <div class="max-w-6xl mx-auto space-y-6">
 
   <div class="bg-white rounded-3xl shadow-sm px-8 py-5 border border-gray-100 flex items-center justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-sky-800">División {{ division_name }}</h1>
+      <h1 class="text-2xl font-bold text-sky-800">{{ division_title }}</h1>
       <p class="text-sm text-gray-500">Avisos, actividades y noticias de la división.</p>
     </div>
+
+    {% if can_manage_posts %}
+      <button disabled
+              class="opacity-60 cursor-not-allowed inline-flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500 text-white text-xs font-semibold">
+        Administrar publicaciones (próximamente)
+      </button>
+    {% endif %}
   </div>
 
   {% if featured %}
-  <div class="bg-amber-50 border border-amber-200 rounded-3xl p-6">
-    <div class="text-xs font-bold text-amber-900">AVISO DESTACADO</div>
-    <div class="text-xl font-bold text-gray-900 mt-1">{{ featured.title }}</div>
-    {% if featured.event_date %}
-      <div class="text-sm text-gray-700 mt-1">Fecha: {{ featured.event_date|date:"d/m/Y" }}</div>
-    {% endif %}
-    {% if featured.description %}
-      <p class="text-sm text-gray-700 mt-3">{{ featured.description }}</p>
-    {% endif %}
-  </div>
+    <div class="bg-amber-50 border border-amber-200 rounded-3xl p-6">
+      <div class="text-xs font-bold text-amber-900">AVISO DESTACADO</div>
+      <div class="text-xl font-bold text-gray-900 mt-1">{{ featured.title }}</div>
+
+      {% if featured.event_date %}
+        <div class="text-sm text-gray-700 mt-1">Fecha: {{ featured.event_date|date:"d/m/Y" }}</div>
+      {% endif %}
+
+      {% if featured.description %}
+        <p class="text-sm text-gray-700 mt-3">{{ featured.description }}</p>
+      {% endif %}
+    </div>
   {% endif %}
 
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">

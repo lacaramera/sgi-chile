@@ -12,7 +12,7 @@ from django.contrib.auth import get_user_model
 
 class User(AbstractUser):
     first_name = models.CharField("nombre", max_length=150, blank=False)
-    last_name  = models.CharField("apellido", max_length=150, blank=False)
+    last_name = models.CharField("apellido", max_length=150, blank=False)
 
     rut = models.CharField("RUT", max_length=12, unique=True)
     address = models.CharField("Dirección", max_length=255, blank=True, default="")
@@ -82,8 +82,7 @@ class User(AbstractUser):
         help_text="Si es responsable/vice nacional, indica qué división lidera (DJM/DJF/Caballeros/Damas).",
     )
 
-    # (opcional) Si ya no lo usas, puedes eliminar este campo.
-    # Si lo mantienes, OK, pero no lo uses para permisos.
+    # (opcional)
     division_national_role = models.CharField(max_length=20, blank=True, default="")
 
     # -------------------------
@@ -139,27 +138,14 @@ class User(AbstractUser):
     def is_directiva(self):
         return self.role == self.ROLE_DIRECTIVA
 
+    # --- Admin / Directiva ---
     def is_admin_sistema(self):
         # superuser de Django o admin/directiva
         return self.is_superuser or self.role in {self.ROLE_ADMIN, self.ROLE_DIRECTIVA}
 
-    # ✅ Alias más claro para usar en templates / permisos
+    # ✅ Método (NO property): así nunca aparece "'bool' object is not callable"
     def is_admin_like(self):
         return self.is_admin_sistema()
-
-    def can_view_active_members(self):
-        return self.role in {
-            self.ROLE_RESP_GRUPO,
-            self.ROLE_RESP_ZONA,
-            self.ROLE_RESP_SECTOR,
-            self.ROLE_DIRECTIVA,
-            self.ROLE_ADMIN,
-        } or self.is_superuser
-
-    def get_sector(self):
-        if self.group_id and self.group and self.group.zona_id and self.group.zona and self.group.zona.sector_id:
-            return self.group.zona.sector
-        return None
 
     # -------------------------
     # División nacional helpers
@@ -174,7 +160,7 @@ class User(AbstractUser):
         return self.is_national_division_lead() or self.is_national_division_vice()
 
     # -------------------------
-    # ✅ Helpers para el menú "Divisiones"
+    # División: menú / permisos
     # -------------------------
     def effective_division_for_menu(self):
         """
@@ -194,7 +180,8 @@ class User(AbstractUser):
         - miembro normal: su division
         """
         division_key = (division_key or "").lower()
-        if self.is_admin_like():
+
+        if self.is_admin_like():  # ✅ CON ()
             return True
 
         eff = self.effective_division_for_menu()
@@ -207,7 +194,8 @@ class User(AbstractUser):
         - RN/Vice RN: solo su national_division
         """
         division_key = (division_key or "").lower()
-        if self.is_admin_like():
+
+        if self.is_admin_like():  # ✅ CON ()
             return True
 
         if self.is_national_division_role():
@@ -215,7 +203,22 @@ class User(AbstractUser):
 
         return False
 
+    # -------------------------
+    # Kofu helpers
+    # -------------------------
+    def can_view_active_members(self):
+        return self.role in {
+            self.ROLE_RESP_GRUPO,
+            self.ROLE_RESP_ZONA,
+            self.ROLE_RESP_SECTOR,
+            self.ROLE_DIRECTIVA,
+            self.ROLE_ADMIN,
+        } or self.is_superuser
 
+    def get_sector(self):
+        if self.group_id and self.group and self.group.zona_id and self.group.zona and self.group.zona.sector_id:
+            return self.group.zona.sector
+        return None
 
 class Sector(models.Model):
     name = models.CharField(max_length=120, unique=True)
@@ -635,20 +638,33 @@ class DivisionPost(models.Model):
         ("damas", "Damas"),
     ]
 
+    KIND_NEWS = "news"
+    KIND_ACTIVITY = "activity"
+    KIND_CHOICES = [
+        (KIND_NEWS, "Noticia / Aviso"),
+        (KIND_ACTIVITY, "Actividad"),
+    ]
+
     division = models.CharField(max_length=20, choices=DIVISION_CHOICES)
-    title = models.CharField(max_length=120)
+    kind = models.CharField(max_length=20, choices=KIND_CHOICES, default=KIND_NEWS)
+
+    title = models.CharField(max_length=140)
     description = models.TextField(blank=True)
 
-    # Si es actividad con fecha:
+    # Solo para actividades (si es noticia, puede quedar vacío)
     event_date = models.DateField(null=True, blank=True)
-    is_upcoming = models.BooleanField(default=False)  # marcar "aviso" principal
 
     image = models.ImageField(upload_to="division_posts/", null=True, blank=True)
+
+    # Publicación y orden
+    is_published = models.BooleanField(default=True)
+    is_featured = models.BooleanField(default=False)   # “Aviso destacado”
+    priority = models.IntegerField(default=0)          # mayor = más arriba
 
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
-        ordering = ["-created_at"]
+        ordering = ["-priority", "-created_at"]
 
     def __str__(self):
         return f"{self.get_division_display()} - {self.title}"

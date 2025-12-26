@@ -97,24 +97,33 @@
       </a> -->
       <!-- SECCIÓN DIVISIONES -->
       <div class="mt-3">
-        <div class="text-xs uppercase tracking-wide text-slate-400 px-3 mb-2">Divisiones y grupos de entrenamiento</div>
-
-        <a href="{% url 'division_home' 'djm' %}" class="sidebar-link block px-3 py-2 rounded-xl hover:bg-white/10">
-          DJM
-        </a>
-        <a href="{% url 'division_home' 'djf' %}" class="sidebar-link block px-3 py-2 rounded-xl hover:bg-white/10">
-          DJF
-        </a>
-        <a href="{% url 'division_home' 'caballeros' %}" class="sidebar-link block px-3 py-2 rounded-xl hover:bg-white/10">
-          Caballeros
-        </a>
-        <a href="{% url 'division_home' 'damas' %}" class="sidebar-link block px-3 py-2 rounded-xl hover:bg-white/10">
-          Damas
-        </a>
-        <a href="{% url 'division_home' 'damas' %}" class="sidebar-link block px-3 py-2 rounded-xl hover:bg-white/10">
-          Division de Sucesores
-        </a>
+      <div class="text-xs uppercase tracking-wide text-slate-400 px-3 mb-2">
+        Divisiones y grupos de entrenamiento
       </div>
+
+      {% if request.user.is_admin_like %}
+        <a href="{% url 'division_home' 'djm' %}" class="sidebar-link block px-3 py-2 rounded-xl hover:bg-white/10">DJM</a>
+        <a href="{% url 'division_home' 'djf' %}" class="sidebar-link block px-3 py-2 rounded-xl hover:bg-white/10">DJF</a>
+        <a href="{% url 'division_home' 'caballeros' %}" class="sidebar-link block px-3 py-2 rounded-xl hover:bg-white/10">Caballeros</a>
+        <a href="{% url 'division_home' 'damas' %}" class="sidebar-link block px-3 py-2 rounded-xl hover:bg-white/10">Damas</a>
+      {% else %}
+        {% with d=request.user.effective_division_for_menu %}
+          {% if d %}
+            <a href="{% url 'division_home' d %}" class="sidebar-link block px-3 py-2 rounded-xl hover:bg-white/10">
+              Mi división
+            </a>
+          {% else %}
+            <span class="block px-3 py-2 text-white/50 text-sm">Sin división asignada</span>
+          {% endif %}
+        {% endwith %}
+      {% endif %}
+
+      <a href="{% url 'division_home' 'damas' %}" class="sidebar-link block px-3 py-2 rounded-xl hover:bg-white/10">
+        División de Sucesores
+      </a>
+    </div>
+
+
 
 
       <a href={% url 'help' %} data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">

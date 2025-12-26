@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
-from .models import User, Event, Contribution, ContributionReport, Notification, Sector, Zona, Grupo, FortunaIssue, FortunaPurchase, Profile
+from .models import User, Event, Contribution, ContributionReport, Notification, Sector, Zona, Grupo, FortunaIssue, FortunaPurchase, Profile, DivisionPost
 from django.utils.html import format_html
 from .utils import send_activation_email  # si ya lo tienes
 
@@ -105,3 +105,41 @@ class FortunaPurchaseAdmin(admin.ModelAdmin):
     search_fields = ("user__username", "user__email", "issue__code", "issue__title")
 
 
+@admin.register(DivisionPost)
+class DivisionPostAdmin(admin.ModelAdmin):
+    list_display = (
+        "id",
+        "division",
+        "kind",
+        "title",
+        "event_date",
+        "is_featured",
+        "is_published",
+        "priority",
+        "created_at",
+    )
+    list_filter = (
+        "division",
+        "kind",
+        "is_featured",
+        "is_published",
+    )
+    search_fields = ("title", "description")
+    ordering = ("-priority", "-created_at")
+    date_hierarchy = "event_date"
+
+    fieldsets = (
+        ("Básico", {
+            "fields": ("division", "kind", "title", "description", "image")
+        }),
+        ("Actividad (solo si corresponde)", {
+            "fields": ("event_date",),
+        }),
+        ("Publicación / Orden", {
+            "fields": ("is_published", "is_featured", "priority"),
+        }),
+        ("Fechas", {
+            "fields": ("created_at",),
+        }),
+    )
+    readonly_fields = ("created_at",)

@@ -1724,83 +1724,96 @@ def fortuna_admin_requests(request):
 
 DIVS = {"djm": "DJM", "djf": "DJF", "caballeros": "Caballeros", "damas": "Damas"}
 
+@login_required
 def division_home(request, division):
     division = (division or "").lower()
     if division not in DIVS:
-        # simple: 404
-        from django.http import Http404
         raise Http404("División no válida")
+
+    user = request.user
+    if user.is_authenticated:
+        if not user.can_view_division(division):
+            return HttpResponseForbidden("No tienes permiso para ver esta división.")
+    else:
+        return HttpResponseForbidden("Debes iniciar sesión.")
 
     today = timezone.localdate()
 
-    # Próximas: por fecha futura o flag is_upcoming
-    upcoming = (DivisionPost.objects
-        .filter(division=division)
-        .filter(event_date__gte=today)
-        .order_by("event_date")[:5]
+    qs = DivisionPost.objects.filter(division=division, is_published=True)
+
+    # Destacado: lo más prioritario marcado como destacado
+    featured = (
+        qs.filter(is_featured=True)
+          .order_by("-priority", "-created_at")
+          .first()
     )
 
-    # “Aviso principal” (si quieres un destacado)
-    featured = (DivisionPost.objects
-        .filter(division=division, is_upcoming=True)
-        .order_by("event_date", "-created_at")
-        .first()
+    # Próximas actividades: kind=activity y fecha >= hoy
+    upcoming = (
+        qs.filter(kind=DivisionPost.KIND_ACTIVITY, event_date__gte=today)
+          .order_by("event_date", "-priority")[:6]
     )
 
-    # Pasadas (últimas 10)
-    past = (DivisionPost.objects
-        .filter(division=division)
-        .filter(event_date__lt=today)
-        .order_by("-event_date", "-created_at")[:10]
+    # Pasadas: kind=activity y fecha < hoy
+    past = (
+        qs.filter(kind=DivisionPost.KIND_ACTIVITY, event_date__lt=today)
+          .order_by("-event_date", "-priority")[:10]
     )
 
-    # Noticias (sin fecha) si quieres usarlo así:
-    news = (DivisionPost.objects
-        .filter(division=division, event_date__isnull=True)
-        .order_by("-created_at")[:10]
+    # Noticias/Avisos: kind=news (da igual si tiene fecha o no, pero lo normal es sin fecha)
+    news = (
+        qs.filter(kind=DivisionPost.KIND_NEWS)
+          .order_by("-priority", "-created_at")[:10]
     )
+
+    # Título bonito
+    if division == "djm":
+        division_title = "División Juvenil Masculina (DJM)"
+    elif division == "djf":
+        division_title = "División Juvenil Femenina (DJF)"
+    elif division == "caballeros":
+        division_title = "División Caballeros"
+    else:
+        division_title = "División Damas"
+
+    can_manage_posts = user.can_manage_division_posts(division)
 
     context = {
         "division_key": division,
-        "division_name": DIVS[division],
+        "division_title": division_title,
         "featured": featured,
         "upcoming": upcoming,
         "past": past,
         "news": news,
+        "can_manage_posts": can_manage_posts,
     }
     return render(request, "divisions/division_home.html", context)
 
 
+@login_required
 def divisions_index(request):
     u = request.user
 
-    # admin/directiva: llévalo a una página tipo selector (opcional)
-    # PERO si todavía no tienes selector, puedes mandarlo a una lista simple o a DJM por defecto.
+    # Admin/Directiva: puede ver cualquiera (por ahora lo mandas a DJM)
     if u.is_admin_like():
-        # opción A: mostrar selector (recomendado)
-        return redirect("division_selector")  # si lo haces
-        # opción B: manda a una división por defecto
-        # return redirect("division_home", division="djm")
+        return redirect("division_home", division="djm")
+
 
     eff = u.effective_division_for_menu()
     if not eff or eff not in DIVS:
         return HttpResponseForbidden("No tienes división asignada.")
+
     return redirect("division_home", division=eff)
+
 
 
 @login_required
 def my_division_redirect(request):
     u = request.user
 
-    # Admin/Directiva: si no tienen división, los mandamos al listado general
-    if u.is_admin_sistema() and not u.division and not u.national_division:
-        return redirect("divisions_index")
-
-    # Prioridad: si es RN/Vice usa la national_division (porque administra esa división)
-    division = u.national_division or u.division
-
-    if not division:
+    eff = u.effective_division_for_menu()
+    if not eff or eff not in DIVS:
         messages.error(request, "No tienes división asignada todavía.")
-        return redirect("home")  # ajusta a tu dashboard si se llama distinto
+        return redirect("home")
 
-    return redirect("division_home", division=division)
+    return redirect("division_home", division=eff)
