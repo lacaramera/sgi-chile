@@ -159,3 +159,6 @@ if DEBUG:
     print("SMTP PASS SET:", bool(EMAIL_HOST_PASSWORD))
 
 
+print("MEDIA_ROOT:", MEDIA_ROOT)
+print("UPLOAD FILE:", image.name if image else None)
+print("MEDIA_ROOT:", settings.MEDIA_ROOT)
