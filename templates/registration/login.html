@@ -1,176 +1,156 @@
-﻿{% load static %}
-<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Iniciar sesión — SGI Chile</title>
+﻿{% extends "base.html" %}
+{% load static %}
 
-  <!-- Tailwind CDN (rápido para prototipo) -->
-  <script src="https://cdn.tailwindcss.com"></script>
+{% block title %}Iniciar sesión — SGI Chile{% endblock %}
 
-  <style>
-    /* Estilos puntuales para inputs dentro del panel izquierdo */
-    .login-left input[type="text"],
-    .login-left input[type="password"] {
-      width: 100%;
-      padding: 0.75rem 1rem;
-      border-radius: 8px;
-      background: transparent;
-      border: 1px solid rgba(255,255,255,0.25);
-      color: #ffffff;
-      outline: none;
-      font-size: 1rem;
-      box-sizing: border-box;
-    }
+{% block content %}
+<div class="min-h-[70vh] flex items-center justify-center">
 
-    .login-left label {
-      color: rgba(255,255,255,0.85);
-      font-size: 0.95rem;
-      display:block;
-      margin-bottom: 0.4rem;
-    }
+  <div class="w-full max-w-md bg-white rounded-2xl shadow-lg p-8">
 
-    .login-left .input-wrapper {
-      position: relative;
-    }
+    <!-- LOGO -->
+    <div class="flex flex-col items-center mb-6">
+      <img src="{% static 'img/logo2.png' %}" alt="SGI Chile" class="w-20 h-20 object-contain mb-3">
+      <h1 class="text-2xl font-extrabold text-sky-800">Soka Gakkai de Chile</h1>
+      <p class="text-sm text-gray-500 mt-1">Intranet institucional</p>
+    </div>
 
-    .login-left .eye-btn {
-      position: absolute;
-      right: 12px;
-      top: 50%;
-      transform: translateY(-50%);
-      background: rgba(255,255,255,0.06);
-      border-radius: 999px;
-      width: 36px;
-      height: 36px;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      cursor:pointer;
-      border: 1px solid rgba(255,255,255,0.08);
-    }
+    <!-- MENSAJES (registro exitoso, activación, reset, etc) -->
+    {% if messages %}
+      <div class="space-y-2 mb-4">
+        {% for message in messages %}
+          <div class="rounded-lg px-4 py-2 text-sm border
+            {% if message.tags == 'success' %} bg-green-50 text-green-800 border-green-200
+            {% elif message.tags == 'error' %} bg-red-50 text-red-800 border-red-200
+            {% elif message.tags == 'warning' %} bg-yellow-50 text-yellow-800 border-yellow-200
+            {% else %} bg-blue-50 text-blue-800 border-blue-200 {% endif %}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
 
-    /* Estética botones */
-    .btn-primary {
-      background: linear-gradient(90deg,#6b7bff,#4a6bff);
-      color: white;
-      border-radius: 999px;
-      padding: 0.85rem 1.25rem;
-      width: 100%;
-      box-shadow: 0 6px 18px rgba(74,107,255,0.18);
-    }
+    <!-- ERRORES GENERALES (credenciales, usuario inactivo, etc) -->
+    {% if form.non_field_errors %}
+      <div class="mb-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm border border-red-200">
+        {% for err in form.non_field_errors %}
+          <div>• {{ err }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
 
-    .btn-secondary {
-      background: white;
-      color: #0b0b3a;
-      border-radius: 999px;
-      padding: 0.85rem 1.25rem;
-      width: 100%;
-      margin-top: 0.75rem;
-      border: 1px solid rgba(0,0,0,0.05);
-    }
+    <form method="post" action="{% url 'login' %}" class="space-y-4">
+      {% csrf_token %}
 
-    /* Pequeño separador para efecto sombra en la división */
-    .divider-shadow {
-      width: 18px;
-      background: linear-gradient(90deg, rgba(0,0,0,0.22), rgba(0,0,0,0.0));
-    }
+      <!-- RUT -->
+      <div>
+        <label for="id_username" class="block text-sm font-semibold text-gray-700 mb-1">
+          RUT
+        </label>
 
-    /* text links */
-    .link-request { color: rgba(255,255,255,0.85); text-decoration: underline; }
-  </style>
-</head>
-<body class="antialiased">
+        <input
+          type="text"
+          name="username"
+          id="id_username"
+          value="{{ form.username.value|default_if_none:'' }}"
+          autocomplete="username"
+          placeholder="12345678-9"
+          class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm
+                 shadow-sm focus:outline-none focus:border-sky-700 focus:ring-2 focus:ring-sky-200"
+        />
 
-  <div class="min-h-screen flex">
-    <!-- LEFT: panel morado -->
-    <div class="login-left w-full md:w-1/2 lg:w-1/2 p-8 md:p-12" style="background: #1b0bb3;">
-      <div class="max-w-lg mx-auto h-full flex flex-col justify-center">
-        <h1 class="text-4xl font-extrabold text-white mb-2">¡Bienvenido!</h1>
-        <p class="text-white/90 mb-8">Por favor, inicia sesión para comenzar</p>
-
-        <!-- Mostrar errores no field -->
-        {% if form.non_field_errors %}
-          <div class="bg-red-600/80 text-white p-3 rounded mb-4">
-            {{ form.non_field_errors }}
+        {% if form.username.errors %}
+          <div class="mt-1 text-sm text-red-600">
+            {% for err in form.username.errors %}
+              <div>• {{ err }}</div>
+            {% endfor %}
           </div>
         {% endif %}
+      </div>
 
-        <form method="post" action="{% url 'login' %}" class="space-y-4">
-          {% csrf_token %}
+      <!-- PASSWORD -->
+      <div>
+        <label for="id_password" class="block text-sm font-semibold text-gray-700 mb-1">
+          Contraseña
+        </label>
 
-          <div>
-            <label for="id_username">Rut</label>
-            <div class="input-wrapper">
-              {{ form.username }}
-            </div>
-          </div>
+        <div class="relative">
+          <input
+            type="password"
+            name="password"
+            id="id_password"
+            autocomplete="current-password"
+            placeholder="••••••••"
+            class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 pr-12 text-sm
+                   shadow-sm focus:outline-none focus:border-sky-700 focus:ring-2 focus:ring-sky-200"
+          />
 
-          <div>
-            <label for="id_password">Password</label>
-            <div class="input-wrapper">
-              {{ form.password }}
-              <button type="button" class="eye-btn" id="togglePassword" tabindex="-1" title="Mostrar / ocultar contraseña">
-                <!-- simple icon -->
-                <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="#fff" stroke-width="1.6">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z"/>
-                </svg>
-              </button>
-            </div>
-          </div>
-
-          <div class="pt-4">
-            <button type="submit" class="btn-primary text-lg font-medium">Iniciar sesión</button>
-          </div>
-
-          <div>
-            <a href="{% url 'password_reset' %}" class="btn-secondary inline-block text-center">Cambiar contraseña</a>
-          </div>
-
-          <div class="text-white/80 text-center mt-6">
-            <span>No tienes cuenta? </span>
-            <a href="#" class="text-white underline">Solicitar cuenta</a>
-          </div>
-        </form>
-
-        <div class="mt-8 text-sm text-white/70 text-center">
-          <small>SGI Chile</small>
+          <!-- ojo -->
+          <button
+            type="button"
+            id="togglePassword"
+            class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+            aria-label="Mostrar u ocultar contraseña"
+          >
+            <!-- icon -->
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none"
+                 viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
         </div>
+
+        {% if form.password.errors %}
+          <div class="mt-1 text-sm text-red-600">
+            {% for err in form.password.errors %}
+              <div>• {{ err }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+
+      <button
+        type="submit"
+        class="w-full py-3 rounded-xl bg-sky-700 hover:bg-sky-800 text-white font-semibold transition"
+      >
+        Iniciar sesión
+      </button>
+    </form>
+
+    <!-- LINKS -->
+    <div class="mt-6 text-sm text-center text-gray-600 space-y-2">
+      <div>
+        <a href="{% url 'password_reset' %}" class="text-sky-700 font-semibold hover:underline">
+          ¿Olvidaste tu contraseña?
+        </a>
+      </div>
+      <div>
+        ¿No tienes cuenta?
+        <a href="{% url 'register' %}" class="text-sky-700 font-semibold hover:underline">
+          Regístrate aquí
+        </a>
       </div>
     </div>
 
-    <!-- small shadow divider -->
-    <div class="hidden md:block divider-shadow"></div>
-
-    <!-- RIGHT: gradiente + imagen -->
-    <div class="w-1/2 hidden md:flex items-center justify-center" style="background: linear-gradient(90deg,#14b2dd,#7be0ff);">
-      <div class="relative w-full h-full flex items-start justify-center">
-        <!-- Logo top-right -->
-        <img src="{% static 'img/logo.png' %}" alt="SGI Chile" class="absolute right-8 top-8 w-40 h-auto object-contain"/>
-
-        <!-- Flag image centered to the right panel -->
-        <img src="{% static 'img/flag.png' %}" alt="Bandera SGI" class="max-w-full max-h-[85vh] object-contain translate-y-8"/>
-      </div>
+    <div class="mt-8 text-xs text-gray-400 text-center">
+      © Soka Gakkai Chile
     </div>
+
   </div>
+</div>
 
-  <script>
-    // toggle password visibility: works because Django default login form gives id="id_password"
-    (function(){
-      const toggle = document.getElementById('togglePassword');
-      if(!toggle) return;
-      const pwd = document.getElementById('id_password');
-      toggle.addEventListener('click', () => {
-        if (pwd.type === 'password') {
-          pwd.type = 'text';
-        } else {
-          pwd.type = 'password';
-        }
-      });
-    })();
-  </script>
+<script>
+  (function(){
+    const btn = document.getElementById("togglePassword");
+    const input = document.getElementById("id_password");
+    if (!btn || !input) return;
 
-</body>
-</html>
+    btn.addEventListener("click", () => {
+      input.type = (input.type === "password") ? "text" : "password";
+    });
+  })();
+</script>
+{% endblock %}

@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% block title %}Material Fortuna{% endblock %}
+{% block content %}
+
+<div class="max-w-6xl mx-auto bg-white rounded-3xl shadow-sm px-8 py-6 border border-gray-100">
+  <div class="flex items-center justify-between gap-3 mb-4">
+    <div>
+      <h1 class="text-2xl font-bold text-sky-800">Material digital</h1>
+      <p class="text-sm text-gray-600">Página {{ page }} de {{ total }}</p>
+    </div>
+
+    <div class="flex items-center gap-2">
+      {% if prev_page %}
+        <a href="?p={{ prev_page }}"
+           class="px-5 py-2 rounded-full bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700">
+          ◀ Anterior
+        </a>
+      {% endif %}
+      {% if next_page %}
+        <a href="?p={{ next_page }}"
+           class="px-5 py-2 rounded-full bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700">
+          Siguiente ▶
+        </a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="max-w-7xl mx-auto bg-white rounded-3xl shadow-sm px-8 py-6 border border-gray-100">
+
+    <img
+        src="{{ current.image.url }}"
+        alt="Fortuna pág {{ page }}"
+        class="w-full max-w-3xl h-auto mx-auto bg-white rounded-2xl select-none"
+        draggable="false"
+        />
+
+
+  </div>
+
+  <!-- Índice numérico -->
+  <!--  <div class="mt-6">
+    <p class="text-sm font-semibold text-gray-600 mb-2">Ir a página:</p>
+
+    <div class="flex flex-wrap gap-2">
+        {% for num in page_range %}
+        <a href="?p={{ num }}"
+            class="px-3 py-1.5 rounded-lg text-sm font-semibold
+                    {% if num == page %} bg-sky-600 text-white
+                    {% else %} bg-gray-200 text-gray-700 hover:bg-gray-300 {% endif %}">
+            {{ num }}
+        </a>
+        {% endfor %}
+    </div>
+    </div> -->
+
+
+    <!-- Índice por secciones (editable a mano) -->
+<div class="mt-8 border-t pt-6">
+  <h2 class="text-lg font-bold text-sky-800 mb-4">Índice</h2>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+
+    <!-- ITEM -->
+    <a href="?p=6" class="group flex items-start justify-between gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 border">
+      <div class="min-w-0">
+        <p class="font-semibold text-gray-800 group-hover:text-sky-800">Mensaje</p>
+        <p class="text-sm text-gray-600 line-clamp-2">
+          ¡Esforcémonos vigorosamente por el kosen-rufu, con exuberante vitalidad!
+        </p>
+        <p class="text-xs text-gray-500 mt-1">Por Minoru Harada, presidente de la Soka Gakkai</p>
+      </div>
+      <span class="shrink-0 text-sm font-bold text-sky-700">p. 4</span>
+    </a>
+
+    <a href="?p=8" class="group flex items-start justify-between gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 border">
+      <div class="min-w-0">
+        <p class="font-semibold text-gray-800 group-hover:text-sky-800">Viviendo el budismo  </p>
+        <p class="text-sm text-gray-600 line-clamp-2">
+          ¡Feliz año nuevo 2026!
+        </p>
+        <p class="text-xs text-gray-500 mt-1">
+          Enseñanzas para la vida diaria
+        </p>
+      </div>
+      <span class="shrink-0 text-sm font-bold text-sky-700">p. 6</span>
+    </a>
+
+    <a href="?p=11" class="group flex items-start justify-between gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 border">
+      <div class="min-w-0">
+        <p class="font-semibold text-gray-800 group-hover:text-sky-800">Fundamentos </p>
+        <p class="text-sm text-gray-600 line-clamp-2">
+          Diálogos con narrativa
+        </p>
+        <p class="text-xs text-gray-500 mt-1">Conceptos filosóficos del budismo Nichiren</p>
+      </div>
+      <span class="shrink-0 text-sm font-bold text-sky-700">p. 9</span>
+    </a>
+
+    <a href="?p=14" class="group flex items-start justify-between gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 border">
+      <div class="min-w-0">
+        <p class="font-semibold text-gray-800 group-hover:text-sky-800">Mundo Soka</p>
+        <p class="text-sm text-gray-600 line-clamp-2">
+          Las reuniones de diálogo son la primera 
+            línea del kosen-rufu mundial
+        </p>
+      </div>
+      <span class="shrink-0 text-sm font-bold text-sky-700">p. 12</span>
+    </a>
+
+    <a href="?p=18" class="group flex items-start justify-between gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 border">
+      <div class="min-w-0">
+        <p class="font-semibold text-gray-800 group-hover:text-sky-800">Mis inicios</p>
+        <p class="text-sm text-gray-600 line-clamp-2">
+          La construcción de un movimiento 
+            popular hacia una era de los derechos 
+            humanos
+        </p>
+        <p class="text-xs text-gray-500 mt-1">Para nuevos miembros y amigos Soka</p>
+      </div>
+      <span class="shrink-0 text-sm font-bold text-sky-700">p. 16</span>
+    </a>
+
+    <a href="?p=20" class="group flex items-start justify-between gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 border">
+      <div class="min-w-0">
+        <p class="font-semibold text-gray-800 group-hover:text-sky-800">La vida de Nichiren Daishonin</p>
+        <p class="text-sm text-gray-600 line-clamp-2">
+          El exilio a Sado – parte 4 
+        </p>
+        <p class="text-xs text-gray-500 mt-1">El gran juramento benevolente de trabajar 
+            para la felicidad de todas las personas</p>
+      </div>
+      <span class="shrink-0 text-sm font-bold text-sky-700">p. 18</span>
+    </a>
+
+    <a href="?p=24" class="group flex items-start justify-between gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 border">
+      <div class="min-w-0">
+        <p class="font-semibold text-gray-800 group-hover:text-sky-800">División de Sucesores</p>
+        <p class="text-sm text-gray-600 line-clamp-2">
+          Nuevo año, nuevos objetivos y metas  
+        </p>
+        <p class="text-xs text-gray-500 mt-1">Material para niños de 6 a 13 años y jóvenes de 14 a 18 años</p>
+      </div>
+      <span class="shrink-0 text-sm font-bold text-sky-700">p. 22</span>
+    </a>
+
+    
+    <a href="?p=31" class="group flex items-start justify-between gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 border">
+      <div class="min-w-0">
+        <p class="font-semibold text-gray-800 group-hover:text-sky-800">Lente Soka  </p>
+        <p class="text-sm text-gray-600 line-clamp-2">
+          Actividades nacionales e internacionales 
+        </p>
+        <p class="text-xs text-gray-500 mt-1">
+          SGICH – SGI
+        </p>
+      </div>
+      <span class="shrink-0 text-sm font-bold text-sky-700">p. 29</span>
+    </a>
+
+    
+    
+
+    
+    <a href="?p=39" class="group flex items-start justify-between gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 border">
+      <div class="min-w-0">
+        <p class="font-semibold text-gray-800 group-hover:text-sky-800">La nueva revolución humana</p>
+        <p class="text-sm text-gray-600 line-clamp-2">
+          Espíritu de búsqueda 
+        </p>
+        <p class="text-xs text-gray-500 mt-1">
+          Volumen 27, Capítulo 4
+        </p>
+      </div>
+      <span class="shrink-0 text-sm font-bold text-sky-700">p. 37</span>
+    </a>
+
+    <a href="?p=49" class="group flex items-start justify-between gap-3 p-3 rounded-xl bg-gray-50 hover:bg-gray-100 border">
+      <div class="min-w-0">
+        <p class="font-semibold text-gray-800 group-hover:text-sky-800">Tema de estudio</p>
+        <p class="text-sm text-gray-600 line-clamp-2">
+          Sobre la prolongación de la vida 
+            La fe existe para construir una vida larga 
+            y saludable
+        </p>
+        <p class="text-xs text-gray-500 mt-1">
+          Disertación del maestro Daisaku Ikeda
+        </p>
+      </div>
+      <span class="shrink-0 text-sm font-bold text-sky-700">p. 47</span>
+    </a>
+
+
+
+    <!-- agrega todos los que quieras -->
+  </div>
+</div>
+
+
+</div>
+
+<script>
+  // ayuda a quitar menú contextual (no 100% en todos los móviles)
+  document.addEventListener("contextmenu", e => e.preventDefault(), {capture:true});
+  document.addEventListener("dragstart", e => e.preventDefault(), {capture:true});
+</script>
+
+{% endblock %}

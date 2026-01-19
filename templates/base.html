@@ -9,8 +9,13 @@
   <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
+
   <!-- CSS global del proyecto -->
   <link rel="stylesheet" href="{% static 'css/main.css' %}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
 </head>
 <body class="antialiased">
 
@@ -18,12 +23,14 @@
   <div id="overlay" class="fixed inset-0 z-40 hidden overlay"></div>
 
   <!-- SIDEBAR -->
+  {% if request.user.is_authenticated %}
+
   <aside id="sidebar" class="fixed left-0 top-0 h-full w-64 bg-[var(--sidebar-bg)] text-white z-50 transform -translate-x-64 sidebar transition-transform duration-300 ease-in-out">
     <div class="relative h-20 flex items-center px-6 border-b border-white/5">
       <!-- usa logo2.png -->
       <img src="{% static 'img/logo2.png' %}" alt="SGI" class="w-10 h-10 object-contain mr-3"/>
       <div>
-        <div class="font-semibold text-lg">Soka gakkai</div>
+        <div class="font-semibold text-lg">Soka Gakkai</div>
         <div class="text-xs text-white/70">de Chile</div>
       </div>
 
@@ -65,14 +72,25 @@
         Sector/Región
       </a> -->
       
-      {% if user.is_authenticated and user.is_admin_sistema %}
-      <a href="{% url 'members_list' %}" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
-        <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-          <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0z"/><path d="M2 21v-2a4 4 0 014-4h12a4 4 0 014 4v2"/>
-        </svg>
-        Miembros
-      </a>
-    {% endif %}
+      {% if user.is_authenticated and user.can_view_active_members %}
+        <a href="{% url 'members_list' %}" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M16 7a4 4 0 11-8 0 4 4 0 018 0z"/><path d="M2 21v-2a4 4 0 014-4h12a4 4 0 014 4v2"/>
+          </svg>
+          Miembros
+        </a>
+      {% endif %}
+
+      {% if user.is_authenticated and user.is_national_division_role or user.is_admin_sistema %}
+        <a href="{% url 'members_division_national_list' %}" data-close-on-click="true" class="flex items-center gap-3 px-3 py-3 rounded-md">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+            <path d="M12 3v18"/><path d="M5 7h14"/><path d="M5 17h14"/>
+          </svg>
+          Miembros (División nacional)
+        </a>
+      {% endif %}
+
+
 
       <div class="border-t border-white/5 my-3"></div>
 
@@ -156,7 +174,7 @@
         <div class="flex items-center gap-2">
           <img src="{% static 'img/logo2.png' %}" alt="SGI" class="w-10 h-10 object-contain"/>
           <div class="hidden sm:block leading-tight">
-            <div class="text-sm font-semibold">Soka gakkai</div>
+            <div class="text-sm font-semibold">Soka Gakkai</div>
             <div class="text-xs text-white/90">de Chile</div>
           </div>
         </div>
@@ -283,23 +301,23 @@
       </div>
     </div>
   </header>
+  {% endif %}
 
-  <!-- Mensaje de exito en la creación/Edición de usuario-->
-
-  {% if messages %}
-  <div class="pt-24 container mx-auto px-6">
-    <div class="space-y-2">
-      {% for message in messages %}
-        <div class="rounded-xl px-4 py-3 text-sm shadow
-          {% if message.tags == 'success' %} bg-green-50 text-green-800 border border-green-200
-          {% elif message.tags == 'error' %} bg-red-50 text-red-800 border border-red-200
-          {% else %} bg-blue-50 text-blue-800 border border-blue-200 {% endif %}">
-          {{ message }}
-        </div>
-      {% endfor %}
+  {% if request.user.is_authenticated and messages %}
+    <div class="pt-24 container mx-auto px-6">
+      <div class="space-y-2">
+        {% for message in messages %}
+          <div class="rounded-xl px-4 py-3 text-sm shadow border
+            {% if message.tags == 'success' %} bg-green-50 text-green-800 border-green-200
+            {% elif message.tags == 'warning' %} bg-yellow-50 text-yellow-800 border-yellow-200
+            {% elif message.tags == 'error' %} bg-red-50 text-red-800 border-red-200
+            {% else %} bg-blue-50 text-blue-800 border-blue-200 {% endif %}">
+            {{ message }}
+          </div>
+        {% endfor %}
+      </div>
     </div>
-  </div>
-{% endif %}
+  {% endif %}
 
 
 
@@ -404,6 +422,33 @@
       });
     })();
   </script>
+
+  <style>
+    /* SGI inputs: borde SIEMPRE visible */
+    input[type="text"],
+    input[type="email"],
+    input[type="password"],
+    input[type="number"],
+    input[type="date"],
+    select,
+    textarea {
+      border-width: 1px !important;
+      border-style: solid !important;
+      border-color: #94a3b8 !important; /* más notorio */
+      background-color: #ffffff !important;
+      border-radius: 12px !important;
+      padding: 12px 14px !important;
+      outline: none !important;
+      box-shadow: none !important;
+    }
+
+    input:focus,
+    select:focus,
+    textarea:focus {
+      border-color: #0b59a5 !important;
+      box-shadow: 0 0 0 3px rgba(11, 89, 165, 0.18) !important;
+    }
+  </style>
 
 
 </body>

@@ -3,11 +3,16 @@ from django.urls import path, include
 from accounts import views as accounts_views
 from django.conf import settings
 from django.conf.urls.static import static
+from django.shortcuts import redirect
+
+def root_redirect(request):
+    return redirect("login")  
 
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path("", accounts_views.home, name="home"),
+    path("", root_redirect, name="root"),
+    path("home/", accounts_views.home, name="home"),
     path('accounts/', include('django.contrib.auth.urls')),  # login/logout/password
     path('accounts/', include('accounts.urls')),             # dashboard, activate
     path('kofu/', accounts_views.kofu_view, name='kofu'),

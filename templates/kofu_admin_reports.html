@@ -75,6 +75,15 @@
                 {{ r.note|default:"-" }}
               </td>
 
+              <td class="py-2 text-xs">
+                {% if r.reported_by %}
+                  {{ r.reported_by.first_name }} {{ r.reported_by.last_name }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+
+
               <td class="py-2">
                 <form method="post" class="space-y-2">
                   {% csrf_token %}

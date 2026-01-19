@@ -6,6 +6,25 @@ from django.template.loader import render_to_string
 from django.conf import settings
 from django.core.mail import send_mail
 
+
+import re
+
+RUT_RE = re.compile(r"^\d{7,8}-[\dkK]$")
+
+def normalize_rut(value: str) -> str:
+    if not value:
+        return value
+    v = value.strip().replace(".", "").replace(" ", "")
+    # si viene sin guion, intentar ponerlo (opcional)
+    if "-" not in v and len(v) in (8, 9):  # 7-8 cuerpo + DV
+        v = v[:-1] + "-" + v[-1]
+    v = v.upper()
+    return v
+
+def is_valid_rut_format(value: str) -> bool:
+    return bool(value and RUT_RE.match(value))
+
+
 def send_activation_email(user, request):
     """
     Envía un correo de activación con un token seguro que apunta a la vista 'activate'.
@@ -23,3 +42,5 @@ def send_activation_email(user, request):
     from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@sokagakkai.cl')
     # send_mail devuelve el número de emails enviados
     send_mail(subject, message, from_email, [user.email])
+
+

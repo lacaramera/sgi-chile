@@ -1,6 +1,6 @@
 from django.urls import path
 from . import views
-from .views import help_view
+from .views import help_view, register_member, activate_account
 
 urlpatterns = [
     path('dashboard/', views.dashboard, name='dashboard'),
@@ -11,6 +11,8 @@ urlpatterns = [
     path("perfil/", views.my_profile, name="my_profile"),
     path("perfil/editar/", views.edit_my_profile, name="edit_my_profile"),
     path("miembros/<int:user_id>/", views.member_profile, name="member_profile"),
+    path("members/division-national/", views.members_division_national_list, name="members_division_national_list"),
+    path("members/division-national/export/", views.members_division_national_export, name="members_division_national_export"),
     path("home/banners/", views.manage_banners, name="manage_banners"),
     path("home/banners/nuevo/", views.create_banner, name="create_banner"),
     path("home/banners/<int:banner_id>/editar/", views.edit_banner, name="edit_banner"),
@@ -31,7 +33,9 @@ urlpatterns = [
     path("fortuna/solicitudes/", views.fortuna_admin_purchases, name="fortuna_admin_purchases"),
     path("divisiones/", views.divisions_index, name="divisions_index"),
     path("divisiones/<slug:division>/", views.division_home, name="division_home"),
-    
-
+    path("register/", views.register_member, name="register"),
+    path("activate/<uidb64>/<token>/", views.activate_account, name="activate"),
+    path("noticias/", views.news_list, name="news_list"),
+    path("noticias/<int:pk>/", views.news_detail, name="news_detail"),
 
 ]

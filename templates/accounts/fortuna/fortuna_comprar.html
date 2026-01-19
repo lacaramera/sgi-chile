@@ -56,9 +56,9 @@
 
   {% if already_approved %}
     <div class="bg-green-100 border border-green-300 text-green-800 px-4 py-3 rounded-xl">
-      ✅ Tu compra ya está aprobada para esta edición. Ya puedes acceder al material.
+      ✅ Actualmente tienes acceso hasta: {{ purchase.access_end }}. Puedes renovar ahora para asegurar el próximo período.
     </div>
-  {% endif %}
+    {% endif %}
 
   {% if success %}
     <div class="bg-green-100 border border-green-300 text-green-800 px-4 py-3 rounded-xl">
@@ -124,18 +124,60 @@
         <h2 class="text-2xl font-bold mb-3">Solicitar compra</h2>
         <ul class="list-disc pl-6 space-y-1 text-sm md:text-base">
           <li>Adjunta tu comprobante de depósito para que un administrador valide tu compra.</li>
-          <li>Una vez aprobada tu solicitud, tendrás acceso al material digital de esta edición.</li>
+          <li>Una vez aprobada tu solicitud, tendrás acceso al material digital de la edición del mes siguiente en adelante.</li>
           <li>Si necesitas ayuda, contacta soporte (+569 5049 4019).</li>
         </ul>
       </div>
 
-      {% if issue and not already_approved %}
+      {% if issue %}
       <form method="post" enctype="multipart/form-data" class="space-y-6">
         {% csrf_token %}
+
+        
+
+        {% if other_mode %}
+        <input type="hidden" name="__other_mode" value="1">
+
+        <label class="block text-sm font-semibold">Informar para</label>
+        <select name="report_for_user_id" class="w-full rounded-xl">
+          {% for m in scope_users %}
+            <option value="{{ m.id }}" {% if target_user.id == m.id %}selected{% endif %}>
+              {{ m.first_name }} {{ m.last_name }}
+            </option>
+          {% endfor %}
+        </select>
+
+        {% endif %}
+
+
+        
+       
+
 
         <!-- Barra azul con inputs -->
         <div class="bg-gradient-to-r from-sky-600 to-cyan-500 rounded-3xl px-8 py-6 text-white shadow-lg space-y-4">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-end">
+
+            <!-- Plan -->
+            <div>
+              <label class="block text-sm font-semibold mb-1">Plan</label>
+              <select name="plan" class="w-full rounded-full px-4 py-2 text-gray-900">
+                <option value="">Selecciona...</option>
+                <option value="trim" {% if selected_plan == "trim" %}selected{% endif %}>
+                  Trimestral — $12.000
+                </option>
+                <option value="sem" {% if selected_plan == "sem" %}selected{% endif %}>
+                  Semestral — $24.000
+                </option>
+                <option value="anual" {% if selected_plan == "anual" %}selected{% endif %}>
+                  Anual — $48.000
+                </option>
+              </select>
+
+              {% if errors.plan %}
+                <p class="text-xs text-red-100 mt-1">{{ errors.plan }}</p>
+              {% endif %}
+            </div>
 
             <!-- Fecha -->
             <div>

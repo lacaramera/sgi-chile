@@ -18,16 +18,16 @@
       {% endif %}
     </div>
 
-    <div id="carousel" class="w-full h-64 relative overflow-hidden rounded-2xl">
+    <div id="carousel" class="w-full h-56 lg:h-80 relative overflow-hidden rounded-2xl">
 
       {% if banners and banners|length > 0 %}
         {% for b in banners %}
           <a href="{{ b.link_url|default:'#' }}"
             {% if b.link_url %}target="_blank"{% endif %}
-            class="carousel-item absolute inset-0 w-full h-64 transition-opacity duration-700
+            class="carousel-item absolute inset-0 w-full h-56 lg:h-80 transition-opacity duration-700
                     {% if forloop.first %}opacity-100 pointer-events-auto{% else %}opacity-0 pointer-events-none{% endif %}">
 
-            <img src="{{ b.image.url }}" class="w-full h-64 object-cover" alt="{{ b.title|default:'Banner' }}" />
+            <img src="{{ b.image.url }}" class="w-full h-56 lg:h-80 object-cover" alt="{{ b.title|default:'Banner' }}" />
 
             {% if b.title or b.subtitle %}
               <div class="absolute inset-0 bg-black/25"></div>
@@ -53,55 +53,319 @@
   </div>
 
   <!-- Right: próximas actividades -->
-  <aside class="bg-white rounded-3xl shadow-sm p-5 border border-gray-100">
-    <div class="flex items-center justify-between mb-3">
+  <aside class="bg-white rounded-3xl shadow-sm p-5 border border-gray-100
+              max-h-[420px] overflow-hidden flex flex-col">
+
+    <div class="flex items-center justify-between mb-3 shrink-0">
       <h3 class="text-lg font-bold text-sky-900">Próximas actividades</h3>
 
       {% if user.is_superuser or user.is_admin_sistema %}
         <a href="{% url 'manage_events' %}"
-           class="px-4 py-2 rounded-full bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700">
+          class="px-4 py-2 rounded-full bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700">
           Gestionar actividades
         </a>
       {% endif %}
     </div>
 
-    <table class="w-full text-sm">
-      <thead class="text-left text-gray-500 text-xs">
-        <tr>
-          <th class="py-2">Actividad</th>
-          <th class="py-2">Fecha</th>
-          <th class="py-2">Hora</th>
-          <th class="py-2">Lugar</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for ev in upcoming %}
-        <tr class="border-t align-top">
-          <td class="py-2 font-medium">{{ ev.title }}</td>
-          <td class="py-2">{{ ev.date|date:"d M Y" }}</td>
-          <td class="py-2">
-            {% if ev.time %}
-              {{ ev.time|time:"H:i" }}
-            {% else %}
-              <span class="text-gray-400">—</span>
-            {% endif %}
-          </td>
-          <td class="py-2">
-            {% if ev.location %}
-              {{ ev.location }}
-            {% else %}
-              <span class="text-gray-400">—</span>
-            {% endif %}
-          </td>
-        </tr>
-        {% empty %}
-        <tr><td colspan="4" class="py-2 text-gray-500">No hay actividades próximas.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    <!-- CONTENIDO CON SCROLL -->
+    <div class="overflow-y-auto pr-1">
+      <div class="space-y-3">
+      {% for ev in upcoming %}
+        <div class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="font-extrabold text-sky-900 leading-snug break-words">
+                {{ ev.title }}
+              </div>
+
+              <div class="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-700">
+                <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white border border-slate-100">
+                  📅 {{ ev.date|date:"d M" }}
+                </span>
+
+                <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white border border-slate-100">
+                  🕒 {% if ev.time %}{{ ev.time|time:"H:i" }}{% else %}—{% endif %}
+                </span>
+
+                <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-white border border-slate-100">
+                  📍 {% if ev.location %}{{ ev.location }}{% else %}—{% endif %}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% empty %}
+        <div class="text-sm text-slate-500">No hay actividades próximas.</div>
+      {% endfor %}
+    </div>
+
+    </div>
+
+
   </aside>
 
+
 </div>
+ 
+<!-- SEGUNDA FILA: AVISOS (izq) + FECHAS IMPORTANTES (der) -->
+<div class="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+  <!-- AVISOS (izquierda) -->
+  <section class="lg:col-span-2 bg-white rounded-3xl shadow-sm p-6 border border-gray-100">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-extrabold tracking-tight text-sky-900">
+        Avisos
+      </h2>
+
+
+    </div>
+
+    {% if notices %}
+      <div class="space-y-3">
+        {% for n in notices %}
+        <div class="p-5 rounded-2xl border
+            {% if n.is_pinned %}
+              border-amber-200 bg-amber-50
+            {% else %}
+              border-slate-100 bg-slate-50
+            {% endif %}">
+
+          <div class="flex gap-4 items-start">
+
+            {% if n.image %}
+              <button
+                type="button"
+                class="shrink-0 group"
+                data-modal-image="{{ n.image.url }}"
+                data-modal-title="{{ n.title|default:'Imagen'|escape }}"
+              >
+                <img
+                  src="{{ n.image.url }}"
+                  alt="Imagen aviso"
+                  class="w-28 h-20 object-cover rounded-xl border border-white shadow-sm group-hover:opacity-90 transition"
+                />
+              </button>
+            {% endif %}
+
+            <div class="min-w-0">
+              <!-- TÍTULO -->
+               {% if n.is_pinned %}
+              <span class="inline-flex items-center text-xs font-bold px-2 py-1 rounded-full bg-amber-100 text-amber-800 mb-2">
+                Destacado
+              </span>
+            {% endif %}
+              <div class="text-base font-bold text-slate-900 tracking-tight">
+                {{ n.title }}
+              </div>
+
+              <!-- CUERPO -->
+              {% if n.body %}
+                <div class="text-[15px] text-slate-700 mt-2 leading-7 whitespace-pre-line">
+                  {{ n.body }}
+                </div>
+
+              {% endif %}
+            </div>
+
+          </div>
+        </div>
+      {% endfor %}
+
+      </div>
+    {% else %}
+      <div class="text-sm text-gray-500">No hay avisos por ahora.</div>
+    {% endif %}
+  </section>
+
+  <!-- FECHAS IMPORTANTES (derecha, vertical) -->
+  <aside class="bg-white rounded-3xl shadow-sm p-6 border border-gray-100
+              max-h-[520px] overflow-hidden flex flex-col">
+
+    <div class="flex items-center justify-between mb-4 shrink-0">
+      <h2 class="text-lg font-bold text-sky-900">
+        Fechas importantes — {{ today|date:"F Y" }}
+      </h2>
+    </div>
+
+    {% if important_dates %}
+      <!-- CONTENIDO CON SCROLL -->
+      <div class="space-y-3 overflow-y-auto pr-1">
+
+        {% for d in important_dates %}
+          <div class="flex gap-4 p-4 rounded-2xl border border-gray-100 bg-slate-50">
+            <div class="text-center min-w-[56px]">
+              <div class="text-xs text-gray-500 uppercase">
+                {{ d.date|date:"M" }}
+              </div>
+              <div class="text-2xl font-extrabold text-sky-800">
+                {{ d.date|date:"d" }}
+              </div>
+            </div>
+
+            <div class="min-w-0">
+              <div class="font-semibold text-slate-800">
+                {{ d.title }}
+              </div>
+              {% if d.description %}
+                <div class="text-sm text-gray-600 mt-1">
+                  {{ d.description }}
+                </div>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+
+      </div>
+    {% else %}
+      <div class="text-sm text-gray-500">
+        No hay fechas importantes cargadas para este mes.
+      </div>
+    {% endif %}
+
+  </aside>
+
+
+</div>
+
+<!-- NOTICIAS (abajo, ancho completo) -->
+<div class="mt-8 bg-white rounded-3xl shadow-sm p-6 border border-gray-100">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="text-xl font-bold text-sky-900">Noticias</h2>
+
+    <a href="{% url 'news_list' %}"
+       class="px-4 py-2 rounded-full bg-sky-600 text-white text-sm font-semibold hover:bg-sky-700">
+      Ver más
+    </a>
+  </div>
+
+  {% if news %}
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {% for post in news %}
+        <article class="news-card rounded-2xl border border-gray-100 overflow-hidden bg-white hover:shadow-sm transition cursor-pointer"
+          data-href="{% url 'news_detail' post.id %}"
+        >
+          
+
+          {% if post.image %}
+            <button type="button news-modal-btn"
+                    class="w-full"
+                    data-modal-image="{{ post.image.url }}"
+                    data-modal-title="{{ post.title|escape }}">
+              <img src="{{ post.image.url }}"
+                   alt="Imagen noticia"
+                   class="w-full h-40 object-cover hover:opacity-95 transition" />
+            </button>
+          {% endif %}
+
+          <div class="p-4">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                {% if post.scope == "chile" %}Chile{% else %}General{% endif %}
+              </span>
+              {% if post.is_pinned %}
+                <span class="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-800">Destacada</span>
+              {% endif %}
+              <span class="text-xs text-gray-500 ml-auto">
+                {{ post.published_at|date:"d M Y" }}
+              </span>
+            </div>
+
+            <h3 class="font-semibold text-slate-900 leading-snug">
+              {{ post.title }}
+            </h3>
+
+            {% if post.summary %}
+              <p class="text-sm text-gray-600 mt-2 line-clamp-3">
+                {{ post.summary }}
+              </p>
+            {% endif %}
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="text-sm text-gray-500">No hay noticias por ahora.</div>
+  {% endif %}
+</div>
+
+
+<!-- MODAL IMAGEN (Lightbox) -->
+<div id="imgModal"
+     class="fixed inset-0 z-[9999] hidden"
+     aria-hidden="true">
+  <!-- Fondo -->
+  <div id="imgModalBackdrop" class="absolute inset-0 bg-black/70"></div>
+
+  <!-- Contenido -->
+  <div class="relative z-[10000] h-full w-full flex items-center justify-center p-4">
+    <div class="relative max-w-5xl w-full">
+      <!-- Botón cerrar -->
+      <button id="imgModalClose"
+              type="button"
+              class="absolute -top-3 -right-3 bg-white text-slate-900 rounded-full w-10 h-10 shadow flex items-center justify-center text-xl font-bold hover:opacity-90"
+              aria-label="Cerrar">
+        ×
+      </button>
+
+      <!-- Título opcional -->
+      <div id="imgModalTitle"
+           class="text-white text-sm mb-2 opacity-90"></div>
+
+      <!-- Imagen -->
+      <img id="imgModalImage"
+           src=""
+           alt="Imagen en grande"
+           class="w-full max-h-[80vh] object-contain rounded-2xl bg-black/20" />
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const modal = document.getElementById("imgModal");
+    const backdrop = document.getElementById("imgModalBackdrop");
+    const btnClose = document.getElementById("imgModalClose");
+    const img = document.getElementById("imgModalImage");
+    const title = document.getElementById("imgModalTitle");
+
+    function openModal(src, t) {
+      img.src = src;
+      title.textContent = t || "";
+      modal.classList.remove("hidden");
+      modal.setAttribute("aria-hidden", "false");
+      document.body.style.overflow = "hidden";
+    }
+
+    function closeModal() {
+      modal.classList.add("hidden");
+      modal.setAttribute("aria-hidden", "true");
+      img.src = "";
+      title.textContent = "";
+      document.body.style.overflow = "";
+    }
+
+    // Click en miniaturas
+    document.addEventListener("click", function (e) {
+      const btn = e.target.closest("[data-modal-image]");
+      if (!btn) return;
+
+      e.preventDefault();
+      openModal(btn.dataset.modalImage, btn.dataset.modalTitle);
+    });
+
+    // Cerrar
+    btnClose.addEventListener("click", closeModal);
+    backdrop.addEventListener("click", closeModal);
+
+    // Cerrar con ESC
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !modal.classList.contains("hidden")) {
+        closeModal();
+      }
+    });
+  })();
+</script>
+
 
 <script>
   (function(){
@@ -129,6 +393,19 @@
       items[idx].classList.add('opacity-100', 'pointer-events-auto');
     }, 5000);
   })();
+</script>
+<script>
+  // Click en la card -> navegar al detalle
+  document.addEventListener("click", function(e){
+    const card = e.target.closest(".news-card");
+    if (!card) return;
+
+    // Si clickeó el botón/imagen modal, NO navegar
+    if (e.target.closest(".news-modal-btn")) return;
+
+    const href = card.dataset.href;
+    if (href) window.location.href = href;
+  });
 </script>
 
 

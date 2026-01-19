@@ -4,85 +4,439 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login
 from django.utils import timezone
-from django.utils.http import urlsafe_base64_decode
-from django.utils.encoding import force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.encoding import force_str, force_bytes
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.forms import SetPasswordForm
-from .models import User, Event, HomeBanner, ContributionReport, Contribution, Notification, Household, HouseholdMember, Sector, Zona, Grupo, FortunaIssue, FortunaPurchase, Profile, DivisionPost
+from .models import User, Event, HomeBanner, ContributionReport, Contribution, Notification, Household, HouseholdMember, Sector, Zona, Grupo, FortunaIssue, FortunaIssuePage, FortunaPurchase, Profile, DivisionPost, ImportantDate, Notice, NewsPost
 from decimal import Decimal, InvalidOperation
 from django.db.models import Sum, Count,  Q
 from django.http import HttpResponseForbidden, HttpResponse, JsonResponse, FileResponse, Http404
 from .models import Sector, Zona, Grupo
 from django.core.mail import send_mail
 from django.conf import settings
-from .forms import MemberCreateForm, MemberEditForm
+from .forms import MemberCreateForm, MemberEditForm, SelfRegisterForm
 from django.core.exceptions import PermissionDenied
 from django.contrib import messages
-from django.db import models
+from django.db import models, connection
 from django.template.loader import get_template
 from calendar import monthrange
 from django.views.decorators.clickjacking import xframe_options_sameorigin
+from django.urls import reverse
+from urllib.parse import quote, unquote
+from django.core.paginator import Paginator
+from datetime import date
+from dateutil.relativedelta import relativedelta
 
 
+def _has_fortuna_access(user, issue: FortunaIssue) -> bool:
+    # buyer manual
+    profile, _ = Profile.objects.get_or_create(user=user)
+    if profile.is_buyer:
+        return True
+
+    today = timezone.now().date()
+
+    # acceso por compras aprobadas y vigentes (según tu lógica nueva)
+    return FortunaPurchase.objects.filter(
+        user=user,
+        status=FortunaPurchase.STATUS_APPROVED,
+        access_start__lte=today,
+        access_end__gte=today,
+    ).exists()
+
+
+
+def _can_report_for_others(u):
+    return u.is_authenticated and u.role in {
+        User.ROLE_RESP_SECTOR,
+        User.ROLE_RESP_ZONA,
+        User.ROLE_RESP_GRUPO,
+        User.ROLE_ADMIN,
+        User.ROLE_DIRECTIVA,
+    } or u.is_superuser
+
+def _calculate_fortuna_period(plan: str, deposit_date: date):
+    # acceso comienza el 1 del mes siguiente
+    start = (deposit_date.replace(day=1) + relativedelta(months=1))
+
+    months = {
+        "trim": 3,
+        "sem": 6,
+        "anual": 12,
+    }[plan]
+
+    end = start + relativedelta(months=months) - relativedelta(days=1)
+    return start, end
+
+
+
+def _get_users_in_scope(u):
+    """
+    Devuelve un queryset de usuarios que este usuario puede reportar "en nombre de".
+    """
+    qs = User.objects.all().select_related("group", "group__zona", "group__zona__sector")
+
+    # admin/directiva/superuser => todos (si quieres)
+    if u.is_superuser or u.role in {User.ROLE_ADMIN, User.ROLE_DIRECTIVA}:
+        return qs.order_by("first_name", "last_name", "id")
+
+    # si no es responsable => solo él mismo (pero en UI no le mostramos selector)
+    if u.role not in {User.ROLE_RESP_SECTOR, User.ROLE_RESP_ZONA, User.ROLE_RESP_GRUPO}:
+        return User.objects.filter(id=u.id)
+
+    # debe tener group asignado para deducir alcance
+    if not u.group_id:
+        return User.objects.none()
+
+    if u.role == User.ROLE_RESP_GRUPO:
+        return qs.filter(group_id=u.group_id).order_by("first_name", "last_name", "id")
+
+    if u.role == User.ROLE_RESP_ZONA:
+        zona_id = u.group.zona_id
+        return qs.filter(group__zona_id=zona_id).order_by("first_name", "last_name", "id")
+
+    # resp_sector
+    sector_id = u.group.zona.sector_id if u.group and u.group.zona_id else None
+    if not sector_id:
+        return User.objects.none()
+
+    return qs.filter(group__zona__sector_id=sector_id).order_by("first_name", "last_name", "id")
+
+
+def _event_visible_to_user(ev, u):
+    # no logueado
+    if not u.is_authenticated:
+        return ev.visibility == ev.VIS_PUBLIC
+
+    # admin/directiva/superuser => ven todo
+    if u.is_superuser or u.role in {u.ROLE_ADMIN, u.ROLE_DIRECTIVA}:
+        return True
+
+    # público => lo ve cualquiera
+    if ev.visibility == ev.VIS_PUBLIC:
+        return True
+
+    # custom
+    roles = set((ev.target_roles or []))
+    divs  = set((ev.target_divisions or []))
+
+    user_role = u.role
+
+    user_div = (u.effective_division_for_menu() or "").lower() if hasattr(u, "effective_division_for_menu") else ""
+    # por si acaso, también soporta division directa
+    user_div2 = (u.division or "").lower() if getattr(u, "division", None) else ""
+
+    role_ok = (not roles) or (user_role in roles)
+    div_ok  = (not divs) or ((user_div and user_div in divs) or (user_div2 and user_div2 in divs))
+
+    # ✅ CLAVE: si hay ambos filtros, deben cumplirse ambos (AND implícito)
+    return role_ok and div_ok
+
+
+
+def _members_scope_qs(user, qs):
+    """
+    Restringe el queryset de miembros según el rol del usuario.
+    - Admin/Directiva/Superuser: ve todo
+    - Resp Sector: ve solo miembros de su sector
+    - Resp Zona: ve solo miembros de su zona
+    - Resp Grupo: ve solo miembros de su grupo
+    """
+    if user.is_superuser or user.is_admin_like():
+        return qs
+
+    # Grupo del usuario (si no tiene, no puede ver nada)
+    if not user.group_id:
+        return qs.none()
+
+    if user.is_responsable_grupo():
+        return qs.filter(group_id=user.group_id)
+
+    if user.is_responsable_zona():
+        zona_id = getattr(user.group, "zona_id", None)
+        if not zona_id:
+            return qs.none()
+        return qs.filter(group__zona_id=zona_id)
+
+    if user.is_responsable_sector():
+        sector = user.get_sector()
+        if not sector:
+            return qs.none()
+        return qs.filter(group__zona__sector_id=sector.id)
+
+    # miembro normal: no ve lista
+    return qs.none()
+
+def _can_view_member_profiles(user) -> bool:
+    return (
+        user.is_superuser
+        or user.is_admin_like()
+        or user.is_responsable_sector()
+        or user.is_responsable_zona()
+        or user.is_responsable_grupo()
+    )
+
+def _user_can_access_target_member(request_user, target_user) -> bool:
+    """
+    Verifica si request_user puede acceder a target_user según alcance.
+    Admin/directiva/superuser: todo.
+    Resp sector: mismo sector.
+    Resp zona: misma zona.
+    Resp grupo: mismo grupo.
+    """
+    if request_user.is_superuser or request_user.is_admin_like():
+        return True
+
+    # si no tiene grupo, no puede acotar bien
+    if not request_user.group_id:
+        return False
+
+    if request_user.is_responsable_grupo():
+        return target_user.group_id == request_user.group_id
+
+    if request_user.is_responsable_zona():
+        rz = getattr(request_user.group, "zona_id", None)
+        tz = getattr(getattr(target_user.group, "zona", None), "id", None)
+        # más directo:
+        tz2 = getattr(target_user.group, "zona_id", None) if target_user.group_id else None
+        return bool(rz and tz2 and rz == tz2)
+
+    if request_user.is_responsable_sector():
+        rs = request_user.get_sector()
+        ts = target_user.get_sector() if hasattr(target_user, "get_sector") else None
+        return bool(rs and ts and rs.id == ts.id)
+
+    return False
 
 def home(request):
     today = timezone.now().date()
+    now = timezone.now()
+    u = request.user
 
-    # 1) BANNERS: SIEMPRE definir antes del context
-    banners = HomeBanner.objects.filter(is_active=True).order_by("order", "-created_at")
+    # -------------------------------------------------
+    # AVISOS
+    # -------------------------------------------------
+    notices_qs = (
+        Notice.objects
+        .filter(is_active=True)
+        .filter(Q(start_at__isnull=True) | Q(start_at__lte=now))
+        .filter(Q(end_at__isnull=True) | Q(end_at__gte=now))
+    )
 
-    # 2) EVENTOS: del mes actual (máx 20)
+    if u.is_authenticated:
+        sector_id = u.get_sector().id if u.get_sector() else None
+        zona_id = u.group.zona_id if u.group and u.group.zona_id else None
+        group_id = u.group_id
+
+        notices = notices_qs.filter(
+            Q(target=Notice.TARGET_GLOBAL)
+            | Q(target=Notice.TARGET_SECTOR, sector_id=sector_id)
+            | Q(target=Notice.TARGET_ZONA, zona_id=zona_id)
+            | Q(target=Notice.TARGET_GRUPO, grupo_id=group_id)
+        )[:10]
+    else:
+        notices = notices_qs.filter(target=Notice.TARGET_GLOBAL)[:10]
+
+    # -------------------------------------------------
+    # BANNERS
+    # -------------------------------------------------
+    banners = (
+        HomeBanner.objects
+        .filter(is_active=True)
+        .order_by("order", "-created_at")
+    )
+
+    # -------------------------------------------------
+    # EVENTOS DEL MES
+    # -------------------------------------------------
     start = today.replace(day=1)
     end = today.replace(day=monthrange(today.year, today.month)[1])
 
-    month_qs = Event.objects.filter(date__range=[start, end]).order_by("date", "time")
+    month_qs = (
+        Event.objects
+        .filter(date__range=[start, end])
+        .order_by("date", "time", "title")
+    )
 
-    # Regla de visibilidad:
-    # - responsables/directiva/admin: ven públicos + privados
-    # - resto: solo públicos
-    if request.user.is_authenticated and request.user.can_view_active_members():
-        upcoming = month_qs[:20]
+    if not u.is_authenticated:
+        upcoming = month_qs.filter(visibility=Event.VIS_PUBLIC)[:20]
+
     else:
-        upcoming = month_qs.filter(is_public=True)[:20]
+        is_admin_like = (
+            u.is_superuser
+            or u.role in {u.ROLE_ADMIN, u.ROLE_DIRECTIVA}
+        )
 
-    # 3) Fallback si no hay banners activos
+        if is_admin_like:
+            upcoming = month_qs[:20]
+
+        else:
+            user_role = u.role
+            user_div = (u.effective_division_for_menu() or "").lower()
+            user_div2 = (
+                (u.division or "").lower()
+                if getattr(u, "division", None)
+                else ""
+            )
+
+            # 🔹 SQLITE → filtrar en Python
+            if connection.vendor == "sqlite":
+                candidates = list(month_qs[:300])
+                upcoming = [
+                    ev for ev in candidates
+                    if _event_visible_to_user(ev, u)
+                ][:20]
+
+            # 🔹 POSTGRES (producción)
+            else:
+                roles_q = Q()
+                divs_q = Q()
+
+                # si hay roles: debe contener el rol del usuario
+                roles_q = Q(target_roles__contains=[user_role])
+
+                # si hay divisiones: debe contener alguna división del usuario
+                divs_q = Q()
+                if user_div:
+                    divs_q |= Q(target_divisions__contains=[user_div])
+                if user_div2:
+                    divs_q |= Q(target_divisions__contains=[user_div2])
+
+                visible_q = (
+                    Q(visibility=Event.VIS_PUBLIC)
+                    |
+                    (
+                        Q(visibility=Event.VIS_CUSTOM)
+                        &
+                        (
+                            # ✅ Caso 1: evento tiene roles y divisiones -> AND
+                            (
+                                Q(target_roles__len__gt=0) &
+                                Q(target_divisions__len__gt=0) &
+                                roles_q &
+                                divs_q
+                            )
+                            |
+                            # ✅ Caso 2: evento tiene SOLO roles
+                            (
+                                Q(target_roles__len__gt=0) &
+                                Q(target_divisions__len=0) &
+                                roles_q
+                            )
+                            |
+                            # ✅ Caso 3: evento tiene SOLO divisiones
+                            (
+                                Q(target_roles__len=0) &
+                                Q(target_divisions__len__gt=0) &
+                                divs_q
+                            )
+                        )
+                    )
+                )
+
+
+                upcoming = month_qs.filter(visible_q)[:20]
+
+    # -------------------------------------------------
+    # FECHAS IMPORTANTES
+    # -------------------------------------------------
+    important_dates = (
+        ImportantDate.objects
+        .filter(is_active=True, date__range=[start, end])
+        .order_by("-priority", "date")[:10]
+    )
+
+    # -------------------------------------------------
+    # NOTICIAS
+    # -------------------------------------------------
+    news = (
+        NewsPost.objects
+        .filter(is_published=True)
+        .filter(published_at__lte=now)
+        .filter(_news_for_user_q(u))
+        [:6]
+    )
+
     fallback_images = ["banner.jpg", "banner2.jpg", "banner3.jpg"]
 
     context = {
         "banners": banners,
         "fallback_images": fallback_images,
         "upcoming": upcoming,
+        "important_dates": important_dates,
+        "today": today,
+        "notices": notices,
+        "news": news,
     }
+
     return render(request, "home.html", context)
 
+
+def _send_activation_email(request, user: User):
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+
+    activation_link = request.build_absolute_uri(
+    reverse("activate", kwargs={"uidb64": uid, "token": quote(token)})
+)
+
+    subject = "Activa tu cuenta - SGI Chile"
+    message = get_template("accounts/activation_email.txt").render({
+        "user": user,
+        "activation_link": activation_link,
+    })
+
+    send_mail(
+        subject,
+        message,
+        getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@sgi-chile.cl"),
+        [user.email],
+        fail_silently=False,
+    )
+
 def activate_account(request, uidb64, token):
+    token = unquote(token)
+
     try:
         uid = force_str(urlsafe_base64_decode(uidb64))
         user = User.objects.get(pk=uid)
-    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+    except Exception:
         user = None
 
-    if user is not None and default_token_generator.check_token(user, token):
-        # Si GET -> mostrar formulario para elegir contraseña
-        if request.method == 'POST':
-            form = SetPasswordForm(user, request.POST)
-            if form.is_valid():
-                form.save()  # guarda la nueva contraseña
-                user.is_active = True
-                user.save()
-                login(request, user)  # loguea al usuario
-                return redirect('dashboard')
-        else:
-            form = SetPasswordForm(user)
-        return render(request, 'accounts/activate.html', {'form': form})
+    if user is None or not default_token_generator.check_token(user, token):
+        return render(request, "accounts/activation_invalid.html")
+
+    # Si ya está activo, no tiene sentido reactivar
+    if user.is_active:
+        messages.info(request, "Tu cuenta ya estaba activada. Inicia sesión.")
+        return redirect("login")
+
+    if request.method == "POST":
+        form = SetPasswordForm(user, request.POST)
+        if form.is_valid():
+            form.save()
+            user.is_active = True
+            user.save(update_fields=["is_active"])
+
+            # ✅ IMPORTANTE: NO hacemos login automático
+            messages.success(request, "✅ Cuenta activada. Ya puedes iniciar sesión.")
+            return redirect("login")  # o "home" si quisieras, pero login es lo más lógico
     else:
-        return render(request, 'accounts/activation_invalid.html')
+        form = SetPasswordForm(user)
+
+    return render(request, "accounts/activate.html", {"form": form})
 
 @login_required
 def dashboard(request):
-    user = request.user
-    context = {'user': user}
-    return render(request, 'dashboard.html', context)
+    # Solo admin-like
+    if not _is_admin_like(request.user):
+        messages.error(request, "No tienes permisos para ver el dashboard.")
+        return redirect("home")
+        # o si prefieres bloqueo duro:
+        # raise PermissionDenied("No tienes permisos para ver el dashboard.")
+
+    return render(request, "dashboard.html", {"user": request.user})
 
 @login_required
 def kofu_view(request):
@@ -102,22 +456,66 @@ def kofu_report(request):
     Formulario para informar una contribución (depósito ya realizado).
     Crea un ContributionReport en estado 'pending'.
     """
-
     context = {}
 
-    # ✅ Familia real desde Household (fallback: solo el usuario)
-    family_members = [request.user]
+    u = request.user
+
+    # ✅ MODO: solo permitir "por otro miembro" si vienes desde el botón (?for=other)
+    other_mode = (request.GET.get("for") == "other") or (request.POST.get("__other_mode") == "1")
+    context["other_mode"] = other_mode
+
+    # ✅ lista para selector "en nombre de" (solo en other_mode)
+    can_report_for_others = other_mode and _can_report_for_others(u)
+    scope_users_qs = _get_users_in_scope(u) if can_report_for_others else User.objects.none()
+
+    context["can_report_for_others"] = can_report_for_others
+    context["scope_users"] = scope_users_qs
+
+
+    # =========================================================
+    # ✅ DEFINIR A QUIÉN SE REPORTA (target_user)
+    # =========================================================
+    target_user = u  # por defecto: para mí
+
+    # Si el responsable seleccionó a otro miembro (POST)
+    report_for_user_id = (request.POST.get("report_for_user_id") or request.GET.get("report_for_user_id") or "").strip()
+
+    if request.method == "POST" and can_report_for_others and report_for_user_id:
+        try:
+            selected_id = int(report_for_user_id)
+        except Exception:
+            selected_id = None
+
+        if selected_id and selected_id != u.id:
+            # ✅ validar alcance
+            if not scope_users_qs.filter(id=selected_id).exists():
+                return HttpResponseForbidden("No puedes reportar para un miembro fuera de tu alcance.")
+            target_user = User.objects.get(id=selected_id)
+
+    # Para que el HTML pueda marcar el select correctamente
+    context["target_user"] = target_user
+    context["report_for_user_id"] = str(target_user.id)
+
+    # =========================================================
+    # ✅ FAMILIA DEL TARGET_USER (distribución familiar)
+    # =========================================================
+    family_members = [target_user]
     try:
-        membership = request.user.household_membership  # HouseholdMember (OneToOne)
+        membership = target_user.household_membership
         qs = (
             HouseholdMember.objects
             .filter(household=membership.household)
             .select_related("user")
             .order_by("-is_primary", "user__first_name", "user__last_name", "user__id")
         )
-        family_members = [m.user for m in qs]
+
+        ordered = [m.user for m in qs]
+        # mover target_user al inicio sí o sí
+        ordered = [target_user] + [x for x in ordered if x.id != target_user.id]
+        family_members = ordered
     except HouseholdMember.DoesNotExist:
         pass
+
 
     context["family_members"] = family_members
 
@@ -184,7 +582,25 @@ def kofu_report(request):
 
             # monto válido
             try:
-                amt = Decimal(monto_text.replace(".", "").replace(",", "."))
+                monto_text_clean = (
+                    (monto_text or "")
+                    .replace("$", "")
+                    .replace(" ", "")
+                    .replace(".", "")
+                    .replace(",", ".")
+                    .strip()
+                )
+
+                # si quedó vacío o es 0 → ignorar fila
+                if monto_text_clean in ("", "0"):
+                    continue
+
+                try:
+                    amt = Decimal(monto_text_clean)
+                except Exception:
+                    errors["family_distribution"] = f"Monto inválido: {monto_text}"
+                    break
+
             except Exception:
                 errors["family_distribution"] = f"Monto inválido: {monto_text}"
                 break
@@ -196,25 +612,22 @@ def kofu_report(request):
             if amt == 0:
                 continue
 
-            u = User.objects.filter(id=uid).first()
-            if not u:
+            member_u = User.objects.filter(id=uid).first()
+            if not member_u:
                 errors["family_distribution"] = "Usuario familiar no existe."
                 break
 
-            splits.append({"user_id": u.id, "amount": float(amt)})
-
-            # ✅ CAMBIO: ya NO guardamos (@username)
-            lines.append(f"{u.first_name} {u.last_name}: {amt}")
+            splits.append({"user_id": member_u.id, "amount": float(amt)})
+            lines.append(f"{member_u.first_name} {member_u.last_name}: {amt}")
 
             family_sum += amt
 
         # ✅ si no distribuyó nada, dejamos todo al mismo usuario
         if amount is not None and not splits:
-            u = request.user
-            splits = [{"user_id": u.id, "amount": float(amount)}]
+            member_u = target_user
+            splits = [{"user_id": member_u.id, "amount": float(amount)}]
+            lines = [f"{member_u.first_name} {member_u.last_name}: {amount}"]
 
-            # ✅ CAMBIO: ya NO guardamos (@username)
-            lines = [f"{u.first_name} {u.last_name}: {amount}"]
 
             family_sum = amount
 
@@ -241,13 +654,16 @@ def kofu_report(request):
             }
 
             ContributionReport.objects.create(
-                user=request.user,
+                user=target_user,                 # ✅ el “dueño” del aporte
+                reported_by=u if target_user.id != u.id else None,
+                reported_for=target_user if target_user.id != u.id else None,
+
                 deposit_amount=amount,
                 deposit_date=deposit_date,
                 receipt=receipt,
-                note=note,  # ✅ comentario del usuario queda guardado aquí
+                note=note,
                 distribution=distribution_payload,
-                family_distribution="\n".join(lines),  # ✅ ahora sin username
+                family_distribution="\n".join(lines),
                 status=ContributionReport.STATUS_PENDING,
             )
 
@@ -502,23 +918,46 @@ def kofu_active_members_export(request):
 
 @login_required
 def create_member(request):
-    if not _is_admin_like(request.user):
+    u = request.user
+
+    # ✅ Permisos: admin/directiva/superuser o responsable sector
+    if not (u.is_superuser or u.is_admin_like() or u.is_responsable_sector()):
         raise PermissionDenied("No tienes permisos para crear miembros.")
 
     if request.method == "POST":
         form = MemberCreateForm(request.POST)
         if form.is_valid():
-            form.save()
+            new_member = form.save(commit=False)
+
+            # ✅ Resp_sector: validar que el group del nuevo miembro pertenece a su sector
+            if u.is_responsable_sector() and not (u.is_superuser or u.is_admin_like()):
+                rs = u.get_sector()
+                if new_member.group_id:
+                    g = Grupo.objects.select_related("zona__sector").filter(id=new_member.group_id).first()
+                    if not g or not rs or g.zona.sector_id != rs.id:
+                        raise PermissionDenied("No puedes crear miembros fuera de tu sector.")
+                else:
+                    # si quieres obligar a asignar grupo, cambia esto por error en form
+                    pass
+
+            new_member.save()
             messages.success(request, "✅ Miembro creado correctamente.")
             return redirect("home")
     else:
         form = MemberCreateForm(initial={"is_active": True})
 
+    # ✅ Resp_sector: limitar sectores mostrados (solo el suyo)
+    sectors_qs = Sector.objects.all().order_by("name")
+    if u.is_responsable_sector() and not (u.is_superuser or u.is_admin_like()):
+        rs = u.get_sector()
+        sectors_qs = Sector.objects.filter(id=rs.id) if rs else Sector.objects.none()
+
     return render(request, "accounts/create_member.html", {
         "form": form,
-        "sectors": Sector.objects.all().order_by("name"),  # ✅ para cascada
+        "sectors": sectors_qs,
         "role_choices": getattr(request.user, "ROLE_CHOICES", None),
     })
+
 
 
 
@@ -558,28 +997,54 @@ def _apply_members_filters(request, qs):
 
 @login_required
 def members_list(request):
-    if not _is_admin_like(request.user):
+    # ✅ Permisos para entrar (ya no solo admin)
+    u = request.user
+    if not (u.is_superuser or u.is_admin_like() or u.is_responsable_sector() or u.is_responsable_zona() or u.is_responsable_grupo()):
         raise PermissionDenied("No tienes permisos para ver miembros.")
 
     base_qs = User.objects.select_related("group__zona__sector").all().order_by(
         "first_name", "last_name", "username"
     )
 
+    # ✅ 1) aplicar scope primero
+    base_qs = _members_scope_qs(u, base_qs)
+
+    # ✅ 2) luego aplicar filtros del form
     qs = _apply_members_filters(request, base_qs)
 
     # datos para filtros dependientes
     sector_id = (request.GET.get("sector_id") or "").strip()
     zona_id = (request.GET.get("zona_id") or "").strip()
 
-    sectors = Sector.objects.all().order_by("name")
+    # ✅ Opciones de filtros también deben respetar scope
+    # Admin/directiva ven todo; responsables ven solo lo suyo
+    if u.is_superuser or u.is_admin_like():
+        sectors = Sector.objects.all().order_by("name")
+    elif u.is_responsable_sector():
+        sec = u.get_sector()
+        sectors = Sector.objects.filter(id=sec.id).order_by("name") if sec else Sector.objects.none()
+    else:
+        # resp zona/grupo no deberían elegir sector
+        sectors = Sector.objects.none()
+
     zonas = Zona.objects.none()
     grupos = Grupo.objects.none()
 
+    # Para admin / resp_sector: zonas dependen de sector seleccionado (o el único sector)
     if sector_id:
         zonas = Zona.objects.filter(sector_id=sector_id).order_by("name")
 
+    # Para resp_zona: zonas fijo = su zona
+    if u.is_responsable_zona() and u.group and u.group.zona_id:
+        zonas = Zona.objects.filter(id=u.group.zona_id)
+
+    # grupos
     if zona_id:
         grupos = Grupo.objects.filter(zona_id=zona_id).order_by("name")
+
+    # Para resp_grupo: grupo fijo = su grupo
+    if u.is_responsable_grupo():
+        grupos = Grupo.objects.filter(id=u.group_id)
 
     context = {
         "members": qs,
@@ -592,76 +1057,70 @@ def members_list(request):
         "zonas": zonas,
         "grupos": grupos,
         "role_choices": User.ROLE_CHOICES,
-        "querystring": request.GET.urlencode(),  # para el botón export
+        "querystring": request.GET.urlencode(),
     }
     return render(request, "accounts/members_list.html", context)
 
 
+
+
 @login_required
 def members_export(request):
-    if not _is_admin_like(request.user):
+    u = request.user
+    if not (u.is_superuser or u.is_admin_like() or u.is_responsable_sector() or u.is_responsable_zona() or u.is_responsable_grupo()):
         raise PermissionDenied("No tienes permisos para exportar miembros.")
 
     base_qs = User.objects.select_related("group__zona__sector").all().order_by(
         "first_name", "last_name", "username"
     )
+
+    # ✅ scope primero
+    base_qs = _members_scope_qs(u, base_qs)
+
+    # ✅ filtros después
     qs = _apply_members_filters(request, base_qs)
 
     response = HttpResponse(content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = 'attachment; filename="miembros.csv"'
-
-    # BOM para Excel (evita caracteres raros en acentos)
     response.write("\ufeff")
 
     writer = csv.writer(response, delimiter=";")
     writer.writerow([
-        "Nombre",
-        "Apellido",
-        "Username",
-        "RUT",
-        "Email",
-        "Rol",
-        "Activo",
-        "Fecha nacimiento",
-        "Edad",
-        "Sector",
-        "Zona",
-        "Grupo",
-        "Direccion",
-        "Fecha ingreso",
-        "Unico miembro familia",
+        "Nombre","Apellido","Username","RUT","Email","Rol","Activo",
+        "Fecha nacimiento","Edad","Sector","Zona","Grupo","Direccion",
+        "Fecha ingreso","Unico miembro familia",
     ])
 
-    for u in qs:
+    for m in qs:
         sector_name = ""
         zona_name = ""
         grupo_name = ""
-        if u.group:
-            grupo_name = u.group.name or ""
-            if getattr(u.group, "zona", None):
-                zona_name = u.group.zona.name or ""
-                if getattr(u.group.zona, "sector", None):
-                    sector_name = u.group.zona.sector.name or ""
+        if m.group:
+            grupo_name = m.group.name or ""
+            if getattr(m.group, "zona", None):
+                zona_name = m.group.zona.name or ""
+                if getattr(m.group.zona, "sector", None):
+                    sector_name = m.group.zona.sector.name or ""
 
-        birth = getattr(u, "birth_date", None)  # si tu campo se llama distinto, cámbialo aquí
-        age = getattr(u, "age", None)  # si tienes @property age, perfecto
+        birth = getattr(m, "birth_date", None)
+        age = getattr(m, "age", None)
 
         writer.writerow([
-            u.first_name or "",
-            u.last_name or "",
-            u.username or "",
-            getattr(u, "rut", "") or "",
-            u.email or "",
-            u.get_role_display() if hasattr(u, "get_role_display") else (u.role or ""),
-            "SI" if u.is_active else "NO",
+            m.first_name or "",
+            m.last_name or "",
+            m.username or "",
+            getattr(m, "rut", "") or "",
+            m.email or "",
+            m.get_role_display() if hasattr(m, "get_role_display") else (m.role or ""),
+            "SI" if m.is_active else "NO",
             birth.strftime("%Y-%m-%d") if birth else "",
             age if age is not None else "",
             sector_name,
             zona_name,
             grupo_name,
-            getattr(u, "address", "") or "",
-            getattr(u, "join_date", None).strftime("%Y-%m-%d") if getattr(u, "join_date", None) else "",
-            "SI" if getattr(u, "is_only_family_member", False) else "NO",
+            getattr(m, "address", "") or "",
+            getattr(m, "join_date", None).strftime("%Y-%m-%d") if getattr(m, "join_date", None) else "",
+            "SI" if getattr(m, "is_only_family_member", False) else "NO",
         ])
 
     return response
@@ -669,10 +1128,18 @@ def members_export(request):
 
 @login_required
 def edit_member(request, user_id):
-    if not _is_admin_like(request.user):
+    u = request.user
+
+    # ✅ Permisos: admin/directiva/superuser o responsable sector
+    if not (u.is_superuser or u.is_admin_like() or u.is_responsable_sector()):
         raise PermissionDenied("No tienes permisos para editar miembros.")
 
-    member = get_object_or_404(User, id=user_id)
+    member = get_object_or_404(User.objects.select_related("group__zona__sector"), id=user_id)
+
+    # ✅ Alcance: resp_sector SOLO puede editar miembros de su sector
+    if u.is_responsable_sector() and not (u.is_superuser or u.is_admin_like()):
+        if not _user_can_access_target_member(u, member):
+            raise PermissionDenied("Solo puedes editar miembros de tu sector.")
 
     # hogar actual (si tiene)
     current_membership = getattr(member, "household_membership", None)
@@ -700,9 +1167,9 @@ def edit_member(request, user_id):
             member.is_active = True if request.POST.get("is_active") == "on" else False
             member.division = (request.POST.get("division") or "").strip()
 
-            # nuevos campos
             member.address = (request.POST.get("address") or "").strip()
             member.is_only_family_member = True if request.POST.get("is_only_family_member") == "on" else False
+
             bd = (request.POST.get("birth_date") or "").strip()
             if bd:
                 member.birth_date = timezone.datetime.strptime(bd, "%Y-%m-%d").date()
@@ -715,8 +1182,23 @@ def edit_member(request, user_id):
             else:
                 member.join_date = None
 
+            # ✅ group_id con validación de alcance para resp_sector
             gid = (request.POST.get("group_id") or "").strip()
-            member.group_id = int(gid) if gid else None
+            new_group_id = int(gid) if gid else None
+
+            if u.is_responsable_sector() and not (u.is_superuser or u.is_admin_like()):
+                if new_group_id is None:
+                    # le permitimos dejarlo sin grupo si quieres; si NO, cambia esto por error.
+                    pass
+                else:
+                    # validar que el grupo pertenece a SU sector
+                    rs = u.get_sector()
+                    g = Grupo.objects.select_related("zona__sector").filter(id=new_group_id).first()
+                    if not g or not g.zona_id or not g.zona.sector_id or not rs or g.zona.sector_id != rs.id:
+                        raise PermissionDenied("No puedes asignar un grupo fuera de tu sector.")
+
+            member.group_id = new_group_id
+
             member.is_division_national_leader = (request.POST.get("is_division_national_leader") == "on")
             member.is_division_national_vice = (request.POST.get("is_division_national_vice") == "on")
             member.national_division = (request.POST.get("national_division") or "").strip() or None
@@ -728,7 +1210,6 @@ def edit_member(request, user_id):
             member.save()
             messages.success(request, "✅ Datos del miembro actualizados.")
             return redirect("edit_member", user_id=member.id)
-
 
         # 2) Crear hogar si no existe y asignar miembro como primary
         if action == "create_household":
@@ -752,26 +1233,27 @@ def edit_member(request, user_id):
             uid = request.POST.get("add_user_id")
             rel = request.POST.get("relationship") or HouseholdMember.REL_OTHER
             try:
-                u = User.objects.get(id=int(uid))
+                add_u = User.objects.get(id=int(uid))
             except Exception:
                 messages.error(request, "Usuario inválido.")
                 return redirect("edit_member", user_id=member.id)
 
-            # si ese usuario ya tiene hogar, lo impedimos (porque OneToOne)
-            if HouseholdMember.objects.filter(user=u).exists():
+            # ✅ alcance también para agregar familiares: resp_sector solo gente de su sector
+            if u.is_responsable_sector() and not (u.is_superuser or u.is_admin_like()):
+                if not _user_can_access_target_member(u, add_u):
+                    raise PermissionDenied("No puedes agregar usuarios fuera de tu sector.")
+
+            if HouseholdMember.objects.filter(user=add_u).exists():
                 messages.error(request, "Ese usuario ya pertenece a otro hogar.")
                 return redirect("edit_member", user_id=member.id)
 
-
-
-
             HouseholdMember.objects.create(
                 household=current_household,
-                user=u,
+                user=add_u,
                 relationship=rel,
                 is_primary=False,
             )
-            messages.success(request, f"✅ {u.first_name} {u.last_name} agregado al hogar.")
+            messages.success(request, f"✅ {add_u.first_name} {add_u.last_name} agregado al hogar.")
             return redirect("edit_member", user_id=member.id)
 
         # 4) Quitar usuario del hogar
@@ -779,12 +1261,10 @@ def edit_member(request, user_id):
             mid = request.POST.get("membership_id")
             m = get_object_or_404(HouseholdMember, id=mid)
 
-            # solo permitir quitar dentro del mismo hogar que estamos editando
             if not current_household or m.household_id != current_household.id:
                 messages.error(request, "Acción no válida.")
                 return redirect("edit_member", user_id=member.id)
 
-            # no permitimos quitar al primary si quedan otros miembros
             if m.is_primary and HouseholdMember.objects.filter(household=current_household).exclude(id=m.id).exists():
                 messages.error(request, "No puedes quitar al miembro principal si quedan otros en el hogar.")
                 return redirect("edit_member", user_id=member.id)
@@ -810,6 +1290,12 @@ def edit_member(request, user_id):
         member_zona_id = member.group.zona_id
         member_sector_id = member.group.zona.sector_id
 
+    # ✅ Para resp_sector: limitar sectores mostrados (solo el suyo)
+    sectors_qs = Sector.objects.all().order_by("name")
+    if u.is_responsable_sector() and not (u.is_superuser or u.is_admin_like()):
+        rs = u.get_sector()
+        sectors_qs = Sector.objects.filter(id=rs.id) if rs else Sector.objects.none()
+
     return render(request, "accounts/edit_member.html", {
         "member": member,
         "household": current_household,
@@ -818,32 +1304,77 @@ def edit_member(request, user_id):
         "q": q,
         "role_choices": User.ROLE_CHOICES,
         "rel_choices": HouseholdMember.REL_CHOICES,
-         "sectors": Sector.objects.all(),
+        "sectors": sectors_qs,
         "member_sector_id": member_sector_id,
         "member_zona_id": member_zona_id,
-         
     })
+
 @login_required
 def ajax_zonas_by_sector(request):
-    sector_id = request.GET.get("sector_id")
-    zonas = []
+    u = request.user
+    sector_id = (request.GET.get("sector_id") or "").strip()
 
-    if sector_id:
-        zonas = Zona.objects.filter(sector_id=sector_id).order_by("name")
+    zonas = Zona.objects.none()
+
+    # --- ADMIN / DIRECTIVA / SUPERUSER ---
+    if u.is_superuser or u.is_admin_like():
+        if sector_id:
+            zonas = Zona.objects.filter(sector_id=sector_id).order_by("name")
+
+    # --- RESPONSABLE SECTOR ---
+    elif u.is_responsable_sector():
+        user_sector = u.get_sector()
+        if user_sector and sector_id and str(user_sector.id) == sector_id:
+            zonas = Zona.objects.filter(sector_id=user_sector.id).order_by("name")
+
+    # --- RESPONSABLE ZONA ---
+    elif u.is_responsable_zona():
+        if u.group and u.group.zona:
+            zonas = Zona.objects.filter(id=u.group.zona_id)
+
+    # --- RESPONSABLE GRUPO ---
+    elif u.is_responsable_grupo():
+        if u.group and u.group.zona:
+            zonas = Zona.objects.filter(id=u.group.zona_id)
 
     data = [{"id": z.id, "name": z.name} for z in zonas]
     return JsonResponse({"zonas": data})
 
+
 @login_required
 def ajax_grupos_by_zona(request):
-    zona_id = request.GET.get("zona_id")
-    grupos = []
+    u = request.user
+    zona_id = (request.GET.get("zona_id") or "").strip()
 
-    if zona_id:
-        grupos = Grupo.objects.filter(zona_id=zona_id).order_by("name")
+    grupos = Grupo.objects.none()
+
+    # --- ADMIN / DIRECTIVA / SUPERUSER ---
+    if u.is_superuser or u.is_admin_like():
+        if zona_id:
+            grupos = Grupo.objects.filter(zona_id=zona_id).order_by("name")
+
+    # --- RESPONSABLE SECTOR ---
+    elif u.is_responsable_sector():
+        user_sector = u.get_sector()
+        if user_sector and zona_id:
+            grupos = Grupo.objects.filter(
+                zona_id=zona_id,
+                zona__sector_id=user_sector.id
+            ).order_by("name")
+
+    # --- RESPONSABLE ZONA ---
+    elif u.is_responsable_zona():
+        if u.group and u.group.zona and zona_id == str(u.group.zona_id):
+            grupos = Grupo.objects.filter(zona_id=u.group.zona_id).order_by("name")
+
+    # --- RESPONSABLE GRUPO ---
+    elif u.is_responsable_grupo():
+        if u.group and zona_id == str(u.group.zona_id):
+            grupos = Grupo.objects.filter(id=u.group.id)
 
     data = [{"id": g.id, "name": g.name} for g in grupos]
     return JsonResponse({"grupos": data})
+
 
 @login_required
 def profile(request, user_id=None):
@@ -942,14 +1473,23 @@ def edit_my_profile(request):
 
 @login_required
 def member_profile(request, user_id):
-    if not _is_admin_like(request.user):
+    u = request.user
+
+    if not _can_view_member_profiles(u):
         raise PermissionDenied("No tienes permisos para ver perfiles de miembros.")
 
-    member = get_object_or_404(
-        User.objects.select_related("group__zona__sector"),
-        id=user_id
-    )
-    return render(request, "accounts/member_profile.html", {"member": member})
+    target = get_object_or_404(User.objects.select_related("group__zona__sector"), id=user_id)
+
+    # ✅ alcance
+    if not _user_can_access_target_member(u, target):
+        raise PermissionDenied("No tienes permisos para ver este perfil.")
+
+    # Renderiza tu mismo template (ajusta el nombre si es otro)
+    return render(request, "accounts/member_profile.html", {
+        "member": target,
+        "is_admin_directiva": _is_admin_or_directiva(u),
+    })
+
 
 def _is_admin_or_directiva(user):
     return user.is_superuser or getattr(user, "role", None) in {user.ROLE_ADMIN, user.ROLE_DIRECTIVA}
@@ -1132,7 +1672,28 @@ def create_event(request):
         description = (request.POST.get("description") or "").strip()
         location = (request.POST.get("location") or "").strip()
         price = (request.POST.get("price") or "").strip()
-        is_public = True if request.POST.get("is_public") == "on" else False
+        visibility = (request.POST.get("visibility") or Event.VIS_PUBLIC).strip()
+        if visibility not in {Event.VIS_PUBLIC, Event.VIS_CUSTOM}:
+            visibility = Event.VIS_PUBLIC
+
+        target_roles = request.POST.getlist("target_roles")
+        target_divisions = request.POST.getlist("target_divisions")
+
+        # Sanear valores permitidos
+        allowed_roles = {User.ROLE_RESP_SECTOR, User.ROLE_RESP_ZONA, User.ROLE_RESP_GRUPO, User.ROLE_MIEMBRO}
+        allowed_divs = {User.DIV_DJM, User.DIV_DJF, User.DIV_CABALLEROS, User.DIV_DAMAS}
+
+        target_roles = [r for r in target_roles if r in allowed_roles]
+        target_divisions = [d for d in target_divisions if d in allowed_divs]
+        # Si es público, ignoramos selección
+        if visibility == Event.VIS_PUBLIC:
+            is_public = True
+            target_roles = []
+            target_divisions = []
+        else:
+            is_public = False
+
+        is_public = (visibility == Event.VIS_PUBLIC)
 
         date_str = (request.POST.get("date") or "").strip()
         time_str = (request.POST.get("time") or "").strip()
@@ -1163,6 +1724,9 @@ def create_event(request):
             date=date_val,
             time=time_val,
             is_public=is_public,
+            visibility=visibility,
+            target_roles=target_roles,
+            target_divisions=target_divisions,
             created_by=request.user,
         )
 
@@ -1184,7 +1748,29 @@ def edit_event(request, event_id):
         ev.description = (request.POST.get("description") or "").strip()
         ev.location = (request.POST.get("location") or "").strip()
         ev.price = (request.POST.get("price") or "").strip()
-        ev.is_public = True if request.POST.get("is_public") == "on" else False
+        visibility = (request.POST.get("visibility") or Event.VIS_PUBLIC).strip()
+        if visibility not in {Event.VIS_PUBLIC, Event.VIS_CUSTOM}:
+            visibility = Event.VIS_PUBLI
+
+        target_roles = request.POST.getlist("target_roles")
+        target_divisions = request.POST.getlist("target_divisions")
+
+        allowed_roles = {User.ROLE_RESP_SECTOR, User.ROLE_RESP_ZONA, User.ROLE_RESP_GRUPO, User.ROLE_MIEMBRO}
+        allowed_divs = {User.DIV_DJM, User.DIV_DJF, User.DIV_CABALLEROS, User.DIV_DAMAS}
+
+        target_roles = [r for r in target_roles if r in allowed_roles]
+        target_divisions = [d for d in target_divisions if d in allowed_divs]
+
+
+        ev.visibility = visibility
+        if visibility == Event.VIS_PUBLIC:
+            ev.is_public = True
+            ev.target_roles = []
+            ev.target_divisions = []
+        else:
+            ev.is_public = False
+            ev.target_roles = target_roles
+            ev.target_divisions = target_divisions
 
         date_str = (request.POST.get("date") or "").strip()
         time_str = (request.POST.get("time") or "").strip()
@@ -1231,7 +1817,8 @@ def delete_event(request, event_id):
 
 @login_required
 def fortuna_home(request):
-    issue = FortunaIssue.objects.filter(is_active=True).first()
+    issue = FortunaIssue.objects.filter(is_active=True).order_by("-code").first()
+
     
     context = {
         "issue": issue,
@@ -1248,35 +1835,34 @@ def fortuna_home(request):
 def fortuna_material(request):
     issue = FortunaIssue.objects.filter(is_active=True).first()
     if not issue:
-        logger.warning("FORTUNA: no active issue")
         return render(request, "accounts/fortuna/fortuna_material_unavailable.html")
 
-    # ✅ Si no hay material cargado, no tiene sentido dejar entrar
-    has_material = bool(getattr(issue, "material_pdf", None)) or bool(getattr(issue, "material_url", ""))
-    if not has_material:
-        logger.warning(f"FORTUNA: issue {issue.code} has no material")
-        return render(request, "accounts/fortuna/fortuna_material_unavailable.html")
+    # 1) Validar que haya material "convertido a imágenes"
+    pages_qs = FortunaIssuePage.objects.filter(issue=issue).order_by("page_number")
+    if not pages_qs.exists():
+        return render(
+            request,
+            "accounts/fortuna/fortuna_material_unavailable.html",
+            {
+                "issue": issue,
+                "message": "No hay páginas generadas para esta edición. (Falta convertir el PDF a imágenes)",
+            },
+        )
 
-    # buyer manual (Profile) + compra aprobada
+    # 2) Validar acceso por plan (access_start/access_end) o buyer manual
     profile, _ = Profile.objects.get_or_create(user=request.user)
     is_buyer = profile.is_buyer
 
-    has_approved_purchase = FortunaPurchase.objects.filter(
-        issue=issue,
+    today = timezone.now().date()
+
+    has_active_access = FortunaPurchase.objects.filter(
         user=request.user,
         status=FortunaPurchase.STATUS_APPROVED,
+        access_start__lte=today,
+        access_end__gte=today,
     ).exists()
 
-    has_access = is_buyer or has_approved_purchase
-
-    logger.warning(
-        f"FORTUNA DEBUG user={request.user.username} "
-        f"is_buyer={is_buyer} approved_purchase={has_approved_purchase} "
-        f"issue={issue.code} has_access={has_access}"
-    )
-
-    if not has_access:
-        logger.warning(f"FORTUNA DENIED user={request.user.username}")
+    if not (is_buyer or has_active_access):
         return render(
             request,
             "accounts/fortuna/fortuna_acces_denied.html",
@@ -1284,9 +1870,39 @@ def fortuna_material(request):
             status=403,
         )
 
-    logger.warning(f"FORTUNA ALLOWED user={request.user.username}")
-    return render(request, "accounts/fortuna/fortuna_material.html", {"issue": issue})
+    # 3) Viewer por páginas (GET ?p=1)
+    try:
+        page = int(request.GET.get("p", "1"))
+    except Exception:
+        page = 1
 
+    total = pages_qs.count()
+    if total <= 0:
+        return render(
+            request,
+            "accounts/fortuna/fortuna_material_unavailable.html",
+            {"issue": issue, "message": "No hay páginas generadas."},
+        )
+
+    page = max(1, min(page, total))
+    current = pages_qs[page - 1]
+
+    # ✅ CLAVE: rango 1..total para que el HTML pueda listar todos los botones
+    page_range = range(1, total + 1)
+
+    return render(
+        request,
+        "accounts/fortuna/fortuna_material_images.html",
+        {
+            "issue": issue,
+            "current": current,
+            "page": page,
+            "total": total,
+            "prev_page": page - 1 if page > 1 else None,
+            "next_page": page + 1 if page < total else None,
+            "page_range": page_range,  # ✅ nuevo
+        },
+    )
 
 @login_required
 def fortuna_ediciones(request):
@@ -1299,42 +1915,87 @@ def fortuna_ediciones(request):
 @login_required
 def fortuna_comprar(request):
     issue = _get_fortuna_current_issue()
-    if not issue:
-        return render(request, "accounts/fortuna/fortuna_comprar.html", {
-            "issue": None,
-            "price_clp": 4000,
-            "is_admin_directiva": _is_admin_or_directiva(request.user),
-        })
 
-    # si ya tiene aprobada => mostrar mensaje
-    existing = FortunaPurchase.objects.filter(issue=issue, user=request.user).first()
+    other_mode = (request.GET.get("for") == "other") or (request.POST.get("__other_mode") == "1")
+    can_report_for_others = _can_report_for_others(request.user)
+    scope_users = _get_users_in_scope(request.user) if can_report_for_others else User.objects.none()
 
-    if existing and existing.status == FortunaPurchase.STATUS_APPROVED:
-        return render(request, "accounts/fortuna/fortuna_comprar.html", {
-            "issue": issue,
-            "price_clp": 4000,
-            "is_admin_directiva": _is_admin_or_directiva(request.user),
-            "already_approved": True,
-            "purchase": existing,
-        })
+    # ---------------------------------
+    # 1) Resolver target_user
+    # ---------------------------------
+    target_user = request.user  # por defecto
 
+    if other_mode and can_report_for_others:
+        target_id_raw = (request.POST.get("report_for_user_id") or request.GET.get("report_for_user_id") or "").strip()
+        scope_ids = set(scope_users.values_list("id", flat=True))
+
+        if target_id_raw:
+            try:
+                tid = int(target_id_raw)
+                # permitir elegirse a sí mismo o alguien dentro del alcance
+                if tid == request.user.id or tid in scope_ids:
+                    tu = User.objects.filter(id=tid).first()
+                    if tu:
+                        target_user = tu
+            except Exception:
+                pass
+
+    # ---------------------------------
+    # Context base (SIEMPRE)
+    # ---------------------------------
     context = {
         "issue": issue,
-        "price_clp": 4000,
         "is_admin_directiva": _is_admin_or_directiva(request.user),
-        "purchase": existing,
         "success": False,
         "errors": {},
+        "date_value": "",
+        "note_value": "",
+        "selected_plan": "",
+        "purchase": None,
+        "already_approved": False,
+        "previous_status": "",
+        "reject_reason": "",
+        "can_report_for_others": can_report_for_others,
+        "scope_users": scope_users,
+        "other_mode": other_mode,
+        "target_user": target_user,
     }
 
+    if not issue:
+        return render(request, "accounts/fortuna/fortuna_comprar.html", context)
+
+    # ---------------------------------
+    # 2) Existing purchase (de este issue y target_user)
+    # ---------------------------------
+    existing = FortunaPurchase.objects.filter(issue=issue, user=target_user).first()
+    context["purchase"] = existing
+
+    if existing:
+        context["previous_status"] = existing.status
+        context["reject_reason"] = existing.reject_reason or ""
+
+        if existing.status == FortunaPurchase.STATUS_APPROVED:
+            # ✅ NO hacemos return: permitimos renovar
+            context["already_approved"] = True
+            context["selected_plan"] = existing.plan or ""
+
+    # ---------------------------------
+    # 3) POST: crear/actualizar solicitud
+    # ---------------------------------
     if request.method == "POST":
+        plan = (request.POST.get("plan") or "").strip()  # trim | sem | anual
         date_raw = (request.POST.get("deposit_date") or "").strip()
         note = (request.POST.get("note") or "").strip()
         receipt = request.FILES.get("receipt")
 
         errors = {}
 
-        # fecha
+        # ✅ validar plan según tu MODELO
+        valid_plans = {FortunaPurchase.PLAN_TRIMESTRAL, FortunaPurchase.PLAN_SEMESTRAL, FortunaPurchase.PLAN_ANUAL}
+        if plan not in valid_plans:
+            errors["plan"] = "Selecciona un plan válido."
+
+        # validar fecha
         deposit_date = None
         try:
             if not date_raw:
@@ -1343,46 +2004,93 @@ def fortuna_comprar(request):
         except Exception:
             errors["deposit_date"] = "Ingresa una fecha de depósito válida."
 
-        # comprobante
+        # validar comprobante
         if not receipt:
             errors["receipt"] = "Debes adjuntar el comprobante de depósito."
 
+        # repoblar form si hay error
+        context["date_value"] = date_raw
+        context["note_value"] = note
+        context["selected_plan"] = plan
+
         if errors:
             context["errors"] = errors
-            context["date_value"] = date_raw
-            context["note_value"] = note
             return render(request, "accounts/fortuna/fortuna_comprar.html", context)
 
-        # crear o actualizar solicitud (pending)
+        # calcular periodo
+        access_start, access_end = _calculate_fortuna_period(plan, deposit_date)
+
+        # ✅ crear o actualizar la solicitud (pending) para ESTE issue + target_user
         obj, created = FortunaPurchase.objects.get_or_create(
             issue=issue,
-            user=request.user,
+            user=target_user,
             defaults={
                 "status": FortunaPurchase.STATUS_PENDING,
-            }
+                "plan": plan,
+                "access_start": access_start,
+                "access_end": access_end,
+                "deposit_date": deposit_date,
+                "receipt": receipt,
+                "note": note,
+                "reject_reason": "",
+                "reported_by": (request.user if target_user.id != request.user.id else None),
+            },
         )
-        obj.status = FortunaPurchase.STATUS_PENDING
-        obj.deposit_date = deposit_date
-        obj.receipt = receipt
-        obj.note = note
-        obj.reject_reason = ""
-        obj.save()
+
+        # Si ya existía, actualizamos campos igual (renovación / reenvío)
+        if not created:
+            obj.status = FortunaPurchase.STATUS_PENDING
+            obj.plan = plan
+            obj.access_start = access_start
+            obj.access_end = access_end
+            obj.deposit_date = deposit_date
+            obj.receipt = receipt
+            obj.note = note
+            obj.reject_reason = ""
+            obj.reported_by = (request.user if target_user.id != request.user.id else None)
+            obj.save()
+
 
         context["success"] = True
         context["purchase"] = obj
         context["date_value"] = ""
         context["note_value"] = ""
+        context["selected_plan"] = obj.plan
 
-    else:
-        context["date_value"] = ""
-        context["note_value"] = ""
+        return render(request, "accounts/fortuna/fortuna_comprar.html", context)
 
-        # si fue rechazada antes, mostrar motivo y permitir reenviar
-        if existing:
-            context["previous_status"] = existing.status
-            context["reject_reason"] = existing.reject_reason
-
+    # ---------------------------------
+    # 4) GET normal
+    # ---------------------------------
     return render(request, "accounts/fortuna/fortuna_comprar.html", context)
+
+
+
+def _calculate_fortuna_period(plan: str, deposit_date: date):
+    """
+    Regla: pago habilita meses FUTUROS.
+    Ej: paga el 20/ene => access_start 01/feb.
+    Plan:
+      - trim: +3 meses
+      - sem: +6 meses
+      - anual: +12 meses
+    access_end = último día del último mes incluido.
+    """
+    # inicio = primer día del mes siguiente
+    start = (deposit_date.replace(day=1) + relativedelta(months=1))
+
+    months_map = {
+        "trim": 3,
+        "sem": 6,
+        "anual": 12,
+    }
+    months = months_map[plan]
+
+    # fin = último día del último mes incluido
+    end_exclusive = start + relativedelta(months=months)   # primer día del mes siguiente al periodo
+    end = end_exclusive - relativedelta(days=1)            # último día del periodo
+
+    return start, end
 
 
 
@@ -1817,3 +2525,325 @@ def my_division_redirect(request):
         return redirect("home")
 
     return redirect("division_home", division=eff)
+
+
+def register_member(request):
+    """
+    Registro público:
+    - username = rut
+    - crea usuario inactivo
+    - envía correo de activación para crear contraseña
+    """
+   # if request.user.is_authenticated:
+      #  return redirect("home")
+
+    if request.method == "POST":
+        form = SelfRegisterForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            try:
+                _send_activation_email(request, user)
+            except Exception:
+                messages.warning(
+                    request,
+                    "Cuenta creada, pero no se pudo enviar el correo. Contacta al administrador para reenviar activación."
+                )
+                return redirect("login")
+
+            messages.success(
+                request,
+                "✅ Registro recibido. Revisa tu correo para activar tu cuenta y crear tu contraseña."
+            )
+            return redirect("login")
+    else:
+        form = SelfRegisterForm()
+
+    return render(request, "registration/register.html", {
+        "form": form,
+        "sectors": Sector.objects.all().order_by("name"),
+    })
+
+
+def _news_for_user_q(u):
+    """
+    Devuelve un Q() con lo que el usuario puede ver:
+    - global siempre
+    - sector si coincide
+    - zona si coincide
+    - grupo si coincide
+    Si no está autenticado: solo global
+    """
+    if not u.is_authenticated:
+        return Q(target=NewsPost.TARGET_GLOBAL)
+
+    sector_id = u.get_sector().id if u.get_sector() else None
+    zona_id = u.group.zona_id if u.group and u.group.zona_id else None
+    group_id = u.group_id
+
+    return (
+        Q(target=NewsPost.TARGET_GLOBAL) |
+        Q(target=NewsPost.TARGET_SECTOR, sector_id=sector_id) |
+        Q(target=NewsPost.TARGET_ZONA, zona_id=zona_id) |
+        Q(target=NewsPost.TARGET_GRUPO, grupo_id=group_id)
+    )
+
+
+@login_required
+def news_list(request):
+    now = timezone.now()
+    u = request.user
+
+    scope = (request.GET.get("scope") or "").strip()  # "general" | "chile" | ""
+    q = (request.GET.get("q") or "").strip()
+
+    qs = (
+        NewsPost.objects
+        .filter(is_published=True, published_at__lte=now)
+        .filter(_news_for_user_q(u))
+    )
+
+    if scope in (NewsPost.SCOPE_GENERAL, NewsPost.SCOPE_CHILE):
+        qs = qs.filter(scope=scope)
+
+    if q:
+        qs = qs.filter(
+            Q(title__icontains=q) |
+            Q(summary__icontains=q) |
+            Q(body__icontains=q)
+        )
+
+    paginator = Paginator(qs, 9)  # 9 cards por página
+    page_number = request.GET.get("page")
+    page_obj = paginator.get_page(page_number)
+
+    return render(request, "news/news_list.html", {
+        "page_obj": page_obj,
+        "scope": scope,
+        "q": q,
+    })
+
+
+def news_detail(request, pk):
+    now = timezone.now()
+    u = request.user
+
+    qs = (
+        NewsPost.objects
+        .filter(is_published=True)
+        .filter(Q(published_at__isnull=True) | Q(published_at__lte=now))
+        .filter(_news_for_user_q(u))   # IMPORTANTE: respeta permisos también en detail
+    )
+
+    post = get_object_or_404(qs, pk=pk)
+
+    return render(request, "news/news_detail.html", {"post": post})
+
+@login_required
+def members_division_national_list(request):
+    u = request.user
+
+    # Permiso: RN/Vice RN (o admin)
+    if not (u.is_admin_like() or u.is_national_division_role()):
+        raise PermissionDenied("No tienes permisos para ver miembros por división nacional.")
+
+    # Determinar división objetivo
+    division_key = (u.national_division or "").lower() if u.is_national_division_role() else ""
+    if u.is_admin_like() and not division_key:
+        # Admin: puede ver todos o filtrar por querystring "division"
+        division_key = (request.GET.get("division") or "").strip().lower()
+
+    base_qs = User.objects.select_related("group__zona__sector").all().order_by(
+        "first_name", "last_name", "username"
+    )
+
+    # Si no es admin, forzar división nacional
+    if not u.is_admin_like():
+        if not division_key:
+            return render(request, "accounts/members_list.html", {
+                "members": User.objects.none(),
+                "q": "",
+                "selected_role": "",
+                "selected_division": "",
+                "selected_sector_id": "",
+                "selected_zona_id": "",
+                "selected_group_id": "",
+                "sectors": Sector.objects.none(),
+                "zonas": Zona.objects.none(),
+                "grupos": Grupo.objects.none(),
+                "role_choices": User.ROLE_CHOICES,
+                "can_filter_sector": False,
+                "can_filter_zona": False,
+                "can_filter_grupo": False,
+                "querystring": request.GET.urlencode(),
+                "division_national_mode": True,
+                "division_national_label": "Sin división nacional asignada",
+            })
+
+        base_qs = base_qs.filter(division=division_key)
+
+    # --- filtros ---
+    q = (request.GET.get("q") or "").strip()
+    role = (request.GET.get("role") or "").strip()
+    division = (request.GET.get("division") or "").strip()  # solo admin debería usarlo aquí
+    sector_id = (request.GET.get("sector_id") or "").strip()
+    zona_id = (request.GET.get("zona_id") or "").strip()
+    group_id = (request.GET.get("group_id") or "").strip()
+
+    qs = base_qs
+
+    if q:
+        qs = qs.filter(
+            Q(first_name__icontains=q) |
+            Q(last_name__icontains=q) |
+            Q(username__icontains=q) |
+            Q(email__icontains=q)
+        )
+
+    if role:
+        qs = qs.filter(role=role)
+
+    # En modo nacional: división ya está “fijada” (salvo admin)
+    if u.is_admin_like() and division:
+        qs = qs.filter(division=division)
+
+    # ✅ en modo nacional sí quieres filtrar por sector/zona/grupo dentro de la división
+    if sector_id:
+        qs = qs.filter(group__zona__sector_id=sector_id)
+    if zona_id:
+        qs = qs.filter(group__zona_id=zona_id)
+    if group_id:
+        qs = qs.filter(group_id=group_id)
+
+    # --- dropdown data ---
+    sectors = Sector.objects.all().order_by("name")
+    zonas = Zona.objects.none()
+    grupos = Grupo.objects.none()
+
+    if sector_id:
+        zonas = Zona.objects.filter(sector_id=sector_id).order_by("name")
+    if zona_id:
+        grupos = Grupo.objects.filter(zona_id=zona_id).order_by("name")
+
+    context = {
+        "members": qs,
+        "q": q,
+        "selected_role": role,
+
+        # si no es admin, dejamos selected_division fijo
+        "selected_division": division if u.is_admin_like() else division_key,
+
+        "selected_sector_id": sector_id,
+        "selected_zona_id": zona_id,
+        "selected_group_id": group_id,
+
+        "sectors": sectors,
+        "zonas": zonas,
+        "grupos": grupos,
+
+        "role_choices": User.ROLE_CHOICES,
+
+        # En nacional: todos estos filtros tienen sentido
+        "can_filter_sector": True,
+        "can_filter_zona": True,
+        "can_filter_grupo": True,
+
+        "querystring": request.GET.urlencode(),
+
+        # flags para el template
+        "division_national_mode": True,
+        "division_national_label": dict(User.DIVISION_CHOICES).get(division_key, division_key),
+    }
+    return render(request, "accounts/members_list.html", context)
+
+
+@login_required
+def members_division_national_export(request):
+    u = request.user
+
+    if not (u.is_admin_like() or u.is_national_division_role()):
+        raise PermissionDenied("No tienes permisos para exportar miembros por división nacional.")
+
+    division_key = (u.national_division or "").lower() if u.is_national_division_role() else ""
+    if u.is_admin_like() and not division_key:
+        division_key = (request.GET.get("division") or "").strip().lower()
+
+    base_qs = User.objects.select_related("group__zona__sector").all().order_by(
+        "first_name", "last_name", "username"
+    )
+
+    if not u.is_admin_like():
+        base_qs = base_qs.filter(division=division_key)
+    else:
+        if division_key:
+            base_qs = base_qs.filter(division=division_key)
+
+    # Reusar filtros simples del list:
+    q = (request.GET.get("q") or "").strip()
+    role = (request.GET.get("role") or "").strip()
+    sector_id = (request.GET.get("sector_id") or "").strip()
+    zona_id = (request.GET.get("zona_id") or "").strip()
+    group_id = (request.GET.get("group_id") or "").strip()
+
+    qs = base_qs
+    if q:
+        qs = qs.filter(
+            Q(first_name__icontains=q) |
+            Q(last_name__icontains=q) |
+            Q(username__icontains=q) |
+            Q(email__icontains=q)
+        )
+    if role:
+        qs = qs.filter(role=role)
+    if sector_id:
+        qs = qs.filter(group__zona__sector_id=sector_id)
+    if zona_id:
+        qs = qs.filter(group__zona_id=zona_id)
+    if group_id:
+        qs = qs.filter(group_id=group_id)
+
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = 'attachment; filename="miembros_division_nacional.csv"'
+    response.write("\ufeff")
+    writer = csv.writer(response, delimiter=";")
+
+    writer.writerow([
+        "Nombre","Apellido","Username","RUT","Email","Rol","Activo",
+        "Fecha nacimiento","Edad","División","Sector","Zona","Grupo","Dirección","Fecha ingreso","Único miembro familia"
+    ])
+
+    division_map = dict(User.DIVISION_CHOICES)
+
+    for m in qs:
+        sector_name = ""
+        zona_name = ""
+        grupo_name = ""
+        if m.group:
+            grupo_name = m.group.name or ""
+            if getattr(m.group, "zona", None):
+                zona_name = m.group.zona.name or ""
+                if getattr(m.group.zona, "sector", None):
+                    sector_name = m.group.zona.sector.name or ""
+
+        birth = getattr(m, "birth_date", None)
+        age = getattr(m, "age", None)
+
+        writer.writerow([
+            m.first_name or "",
+            m.last_name or "",
+            m.username or "",
+            getattr(m, "rut", "") or "",
+            m.email or "",
+            m.get_role_display(),
+            "SI" if m.is_active else "NO",
+            birth.strftime("%Y-%m-%d") if birth else "",
+            age if age is not None else "",
+            division_map.get((m.division or "").lower(), m.division or ""),
+            sector_name,
+            zona_name,
+            grupo_name,
+            getattr(m, "address", "") or "",
+            getattr(m, "join_date", None).strftime("%Y-%m-%d") if getattr(m, "join_date", None) else "",
+            "SI" if getattr(m, "is_only_family_member", False) else "NO",
+        ])
+
+    return response

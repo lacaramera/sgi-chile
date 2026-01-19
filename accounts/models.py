@@ -288,22 +288,48 @@ class HouseholdMember(models.Model):
         return f"{self.user.username} -> {self.household}"
 
 class Event(models.Model):
+    # Modo de visibilidad
+    VIS_PUBLIC = "public"
+    VIS_CUSTOM = "custom"
+    VISIBILITY_CHOICES = [
+        (VIS_PUBLIC, "Visible para todos (público)"),
+        (VIS_CUSTOM, "Visible para selección (roles/divisiones)"),
+    ]
+
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     date = models.DateField()
     time = models.TimeField(null=True, blank=True)
     location = models.CharField(max_length=200, blank=True)
-    price = models.CharField(max_length=50, blank=True)  # p.e. "$500" o "Gratuito"
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    price = models.CharField(max_length=50, blank=True)
+    created_by = models.ForeignKey("User", on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    # compatibilidad con tu código anterior (si quieres puedes dejarlo)
     is_public = models.BooleanField(default=True)
-    image = models.CharField(max_length=255, blank=True)  # ruta relativa en static/img/ (opcional)
+
+    visibility = models.CharField(
+        max_length=20,
+        choices=VISIBILITY_CHOICES,
+        default=VIS_PUBLIC,
+    )
+
+    # ✅ Checkboxes (guardan listas)
+    # Roles permitidos: resp_sector, resp_zona, resp_grupo, miembro (etc)
+    target_roles = models.JSONField(default=list, blank=True)
+
+    # Divisiones permitidas: djm, djf, caballeros, damas
+    target_divisions = models.JSONField(default=list, blank=True)
+
+    image = models.CharField(max_length=255, blank=True)
 
     class Meta:
-        ordering = ['date', 'time']
+        ordering = ["date", "time"]
 
     def __str__(self):
         return f"{self.title} — {self.date}"
+
+
     
 class HomeBanner(models.Model):
     title = models.CharField(max_length=120, blank=True, default="")
@@ -399,6 +425,26 @@ class ContributionReport(models.Model):
         verbose_name="Usuario que informa",
     )
 
+    # ✅ NUEVO: quién lo envió (responsable)
+    reported_by = models.ForeignKey(
+        "User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="contribution_reports_submitted",
+        verbose_name="Enviado por",
+    )
+
+    # ✅ NUEVO: para quién es (miembro beneficiario)
+    reported_for = models.ForeignKey(
+        "User",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="contribution_reports_for",
+        verbose_name="Reportado para",
+    )
+    
     deposit_amount = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Monto informado")
     deposit_date = models.DateField(verbose_name="Fecha de depósito")
 
@@ -592,35 +638,79 @@ class FortunaIssue(models.Model):
         return self.title or f"Fortuna {self.code}"
 
 
+class FortunaIssuePage(models.Model):
+    issue = models.ForeignKey(FortunaIssue, on_delete=models.CASCADE, related_name="pages")
+    page_number = models.PositiveIntegerField()
+    image = models.ImageField(upload_to="fortuna/pages/")
+
+    class Meta:
+        unique_together = ("issue", "page_number")
+        ordering = ["page_number"]
+
+    def __str__(self):
+        return f"{self.issue.code} - pág {self.page_number}"
+    
+    
 
 class FortunaPurchase(models.Model):
+    PLAN_TRIMESTRAL = "trim"
+    PLAN_SEMESTRAL = "sem"
+    PLAN_ANUAL = "anual"
+
+    PLAN_CHOICES = [
+        (PLAN_TRIMESTRAL, "Trimestral ($12.000)"),
+        (PLAN_SEMESTRAL, "Semestral ($24.000)"),
+        (PLAN_ANUAL, "Anual ($48.000)"),
+    ]
+
     issue = models.ForeignKey(FortunaIssue, on_delete=models.CASCADE, related_name="purchases")
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="fortuna_purchases")
+
+    # 👇 dueño real del acceso
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="fortuna_purchases"
+    )
+
+    # 👇 quien reportó (opcional)
+    reported_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="fortuna_reports_created"
+    )
+
+    plan = models.CharField(max_length=10, choices=PLAN_CHOICES)
+
+    access_start = models.DateField()
+    access_end = models.DateField()
 
     STATUS_PENDING = "pending"
     STATUS_APPROVED = "approved"
     STATUS_REJECTED = "rejected"
+
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pendiente"),
         (STATUS_APPROVED, "Aprobada"),
         (STATUS_REJECTED, "Rechazada"),
     ]
+
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
+
+    deposit_date = models.DateField(null=True, blank=True)
+    receipt = models.FileField(upload_to="fortuna/receipts/", null=True, blank=True)
+    note = models.TextField(blank=True, default="")
+    reject_reason = models.TextField(blank=True, default="")
+
     created_at = models.DateTimeField(auto_now_add=True)
 
-
-    deposit_date = models.DateField(null=True, blank=True, verbose_name="Fecha de depósito")
-    receipt = models.FileField(upload_to="fortuna/receipts/", null=True, blank=True, verbose_name="Comprobante")
-    note = models.TextField(blank=True, default="", verbose_name="Comentario")
-    reject_reason = models.TextField(blank=True, default="", verbose_name="Motivo rechazo")
-
     class Meta:
-        unique_together = ("issue", "user")  # 1 solicitud por edición
-
-    
+        ordering = ["-created_at"]
 
     def __str__(self):
-        return f"{self.user} - {self.issue} ({self.status})"
+        return f"{self.user} - {self.get_plan_display()} ({self.status})"
+
 
 
 class Profile(models.Model):
@@ -668,3 +758,132 @@ class DivisionPost(models.Model):
 
     def __str__(self):
         return f"{self.get_division_display()} - {self.title}"
+    
+class ImportantDate(models.Model):
+    SCOPE_GENERAL = "general"
+    SCOPE_CHILE = "chile"
+
+    SCOPE_CHOICES = [
+        (SCOPE_GENERAL, "General SGI"),
+        (SCOPE_CHILE, "Chile"),
+    ]
+
+    date = models.DateField("Fecha")
+    title = models.CharField("Título", max_length=150)
+    description = models.TextField("Descripción", blank=True)
+    scope = models.CharField(
+        "Ámbito",
+        max_length=20,
+        choices=SCOPE_CHOICES,
+        default=SCOPE_GENERAL,
+    )
+    is_active = models.BooleanField("Activo", default=True)
+    priority = models.IntegerField("Prioridad", default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-priority", "date"]
+        verbose_name = "Fecha importante"
+        verbose_name_plural = "Fechas importantes"
+
+    def __str__(self):
+        return f"{self.date} - {self.title}"
+
+class Notice(models.Model):
+    TARGET_GLOBAL = "global"
+    TARGET_SECTOR = "sector"
+    TARGET_ZONA = "zona"
+    TARGET_GRUPO = "grupo"
+
+    TARGET_CHOICES = [
+        (TARGET_GLOBAL, "Todos (Global)"),
+        (TARGET_SECTOR, "Sector / Región"),
+        (TARGET_ZONA, "Zona"),
+        (TARGET_GRUPO, "Grupo"),
+    ]
+
+    title = models.CharField("Título", max_length=160)
+    body = models.TextField("Contenido", blank=True)
+    image = models.ImageField(
+        "Imagen (opcional)",
+        upload_to="notices/",
+        null=True,
+        blank=True,
+    )
+    target = models.CharField("Audiencia", max_length=20, choices=TARGET_CHOICES, default=TARGET_GLOBAL)
+
+    # a qué apunta (según target)
+    sector = models.ForeignKey("Sector", null=True, blank=True, on_delete=models.CASCADE)
+    zona = models.ForeignKey("Zona", null=True, blank=True, on_delete=models.CASCADE)
+    grupo = models.ForeignKey("Grupo", null=True, blank=True, on_delete=models.CASCADE)
+
+    is_pinned = models.BooleanField("Destacado", default=False)
+    priority = models.IntegerField("Prioridad", default=0)
+    is_active = models.BooleanField("Activo", default=True)
+
+    start_at = models.DateTimeField("Desde", null=True, blank=True)
+    end_at = models.DateTimeField("Hasta", null=True, blank=True)
+
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-is_pinned", "-priority", "-created_at"]
+        verbose_name = "Aviso"
+        verbose_name_plural = "Avisos"
+
+    def __str__(self):
+        return self.title
+
+class NewsPost(models.Model):
+    # Ámbito (para separar Chile vs general SGI)
+    SCOPE_GENERAL = "general"
+    SCOPE_CHILE = "chile"
+    SCOPE_CHOICES = [
+        (SCOPE_GENERAL, "General SGI"),
+        (SCOPE_CHILE, "Chile"),
+    ]
+
+    # Audiencia (igual a Notice)
+    TARGET_GLOBAL = "global"
+    TARGET_SECTOR = "sector"
+    TARGET_ZONA = "zona"
+    TARGET_GRUPO = "grupo"
+    TARGET_CHOICES = [
+        (TARGET_GLOBAL, "Todos (Global)"),
+        (TARGET_SECTOR, "Sector / Región"),
+        (TARGET_ZONA, "Zona"),
+        (TARGET_GRUPO, "Grupo"),
+    ]
+
+    title = models.CharField("Título", max_length=180)
+    summary = models.TextField("Bajada / Resumen", blank=True, default="")
+    body = models.TextField("Contenido", blank=True, default="")
+
+    image = models.ImageField("Imagen (opcional)", upload_to="news/", null=True, blank=True)
+
+    scope = models.CharField("Ámbito", max_length=20, choices=SCOPE_CHOICES, default=SCOPE_GENERAL)
+    target = models.CharField("Audiencia", max_length=20, choices=TARGET_CHOICES, default=TARGET_GLOBAL)
+    source_url = models.URLField("Fuente (URL)", blank=True, default="")
+    
+    sector = models.ForeignKey("Sector", null=True, blank=True, on_delete=models.CASCADE)
+    zona = models.ForeignKey("Zona", null=True, blank=True, on_delete=models.CASCADE)
+    grupo = models.ForeignKey("Grupo", null=True, blank=True, on_delete=models.CASCADE)
+
+    is_pinned = models.BooleanField("Destacado", default=False)
+    priority = models.IntegerField("Prioridad", default=0)
+    is_published = models.BooleanField("Publicado", default=True)
+
+    published_at = models.DateTimeField("Fecha publicación", default=timezone.now)
+
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-is_pinned", "-priority", "-published_at", "-created_at"]
+        verbose_name = "Noticia"
+        verbose_name_plural = "Noticias"
+
+    def __str__(self):
+        return self.title

@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Registro{% endblock %}
+{% block content %}
+
+<div class="max-w-2xl mx-auto bg-white rounded-2xl shadow p-6">
+  <h2 class="text-2xl font-extrabold text-sky-800 mb-1">Crear cuenta</h2>
+  <p class="text-sm text-gray-500 mb-6">
+    Regístrate con tu RUT. Te enviaremos un correo para activar tu cuenta y crear tu contraseña.
+  </p>
+
+  {% if form.errors %}
+    <div class="mb-4 p-3 rounded bg-red-50 text-red-700 text-sm">
+      Revisa los campos. Hay errores en el formulario.
+      <div class="mt-2 text-xs text-red-600">{{ form.errors }}</div>
+    </div>
+  {% endif %}
+
+  <form method="post" class="space-y-4">
+    {% csrf_token %}
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="text-sm font-semibold">RUT (será tu usuario)</label>
+        {{ form.rut }}
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold">División</label>
+        {{ form.division }}
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold">Nombre</label>
+        {{ form.first_name }}
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold">Apellido</label>
+        {{ form.last_name }}
+      </div>
+
+      <div class="md:col-span-2">
+        <label class="text-sm font-semibold">Email</label>
+        {{ form.email }}
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold">Fecha de nacimiento</label>
+        {{ form.birth_date }}
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold">Fecha de ingreso (opcional)</label>
+        {{ form.join_date }}
+      </div>
+
+      <div class="md:col-span-2">
+        <label class="text-sm font-semibold">Dirección (opcional)</label>
+        {{ form.address }}
+      </div>
+    </div>
+
+    <!-- CASCADA: Sector -> Zona -> Grupo -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+      <div class="md:col-span-2">
+        <label class="text-sm font-semibold">Sector / Región</label>
+        <select id="sectorSelect" class="w-full border border-gray-200 rounded-2xl px-4 py-2 text-sm">
+          <option value="">— Selecciona sector —</option>
+          {% for s in sectors %}
+            <option value="{{ s.id }}">{{ s.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold">Zona</label>
+        <select id="zonaSelect" class="w-full border border-gray-200 rounded-2xl px-4 py-2 text-sm" disabled>
+          <option value="">— Selecciona zona —</option>
+        </select>
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold">Grupo</label>
+        <!-- IMPORTANTE: name="group" (es el field real del ModelForm) -->
+        <select name="group" id="grupoSelect" class="w-full border border-gray-200 rounded-2xl px-4 py-2 text-sm" disabled>
+          <option value="">— Selecciona grupo —</option>
+        </select>
+        <p class="text-xs text-gray-500 mt-1">* Debes elegir Grupo para completar el registro.</p>
+      </div>
+    </div>
+
+    <div class="pt-4 flex gap-3">
+      <button class="px-5 py-2 rounded-lg bg-sky-700 text-white font-semibold">
+        Registrarme
+      </button>
+      <a href="{% url 'login' %}" class="px-5 py-2 rounded-lg border">Volver</a>
+    </div>
+  </form>
+
+  <div class="mt-6 text-sm text-gray-500">
+    ¿Ya tienes cuenta?
+    <a href="{% url 'login' %}" class="text-sky-700 font-semibold hover:underline">Inicia sesión</a>
+  </div>
+</div>
+
+<script>
+(function(){
+  const sectorSelect = document.getElementById("sectorSelect");
+  const zonaSelect = document.getElementById("zonaSelect");
+  const grupoSelect = document.getElementById("grupoSelect");
+
+  function resetZonas(){
+    zonaSelect.innerHTML = '<option value="">— Selecciona zona —</option>';
+    zonaSelect.disabled = true;
+  }
+  function resetGrupos(){
+    grupoSelect.innerHTML = '<option value="">— Selecciona grupo —</option>';
+    grupoSelect.disabled = true;
+  }
+
+  sectorSelect.addEventListener("change", () => {
+    const sectorId = sectorSelect.value;
+    resetZonas(); resetGrupos();
+    if (!sectorId) return;
+
+    fetch(`/accounts/ajax/zonas/?sector_id=${sectorId}`)
+      .then(r => r.json())
+      .then(data => {
+        (data.zonas || []).forEach(z => {
+          zonaSelect.innerHTML += `<option value="${z.id}">${z.name}</option>`;
+        });
+        zonaSelect.disabled = false;
+      });
+  });
+
+  zonaSelect.addEventListener("change", () => {
+    const zonaId = zonaSelect.value;
+    resetGrupos();
+    if (!zonaId) return;
+
+    fetch(`/accounts/ajax/grupos/?zona_id=${zonaId}`)
+      .then(r => r.json())
+      .then(data => {
+        (data.grupos || []).forEach(g => {
+          grupoSelect.innerHTML += `<option value="${g.id}">${g.name}</option>`;
+        });
+        grupoSelect.disabled = false;
+      });
+  });
+})();
+</script>
+
+{% endblock %}

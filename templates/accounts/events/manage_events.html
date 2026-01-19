@@ -8,7 +8,8 @@
       <h1 class="text-2xl font-bold text-sky-800">Actividades del mes</h1>
       <p class="text-sm text-gray-500">Mes: {{ month }}/{{ year }}</p>
     </div>
-    <a href="{% url 'create_event' %}" class="px-5 py-2 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
+    <a href="{% url 'create_event' %}"
+       class="px-5 py-2 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
       + Nueva actividad
     </a>
   </div>
@@ -20,26 +21,85 @@
           <th class="px-6 py-3 text-left">Título</th>
           <th class="px-6 py-3 text-left">Fecha</th>
           <th class="px-6 py-3 text-left">Hora</th>
+          <th class="px-6 py-3 text-left">Visibilidad</th>
+          <th class="px-6 py-3 text-left">Roles</th>
+          <th class="px-6 py-3 text-left">Divisiones</th>
           <th class="px-6 py-3 text-left">Público</th>
           <th class="px-6 py-3 text-right">Acciones</th>
         </tr>
       </thead>
+
       <tbody class="divide-y">
         {% for e in events %}
-        <tr>
+        <tr class="align-top">
           <td class="px-6 py-3 font-medium">{{ e.title }}</td>
+
           <td class="px-6 py-3">{{ e.date|date:"d/m/Y" }}</td>
-          <td class="px-6 py-3">{% if e.time %}{{ e.time|time:"H:i" }}{% else %}—{% endif %}</td>
-          <td class="px-6 py-3">{% if e.is_public %}Sí{% else %}No{% endif %}</td>
-          <td class="px-6 py-3 text-right">
-            <a class="px-3 py-1.5 rounded-full border text-sm hover:bg-gray-50" href="{% url 'edit_event' e.id %}">Editar</a>
-            <a class="px-3 py-1.5 rounded-full border text-sm hover:bg-gray-50" href="{% url 'delete_event' e.id %}">Eliminar</a>
+
+          <td class="px-6 py-3">
+            {% if e.time %}{{ e.time|time:"H:i" }}{% else %}—{% endif %}
+          </td>
+
+          <td class="px-6 py-3">
+            {{ e.get_visibility_display }}
+          </td>
+
+          <!-- Roles seleccionados (si es custom) -->
+          <td class="px-6 py-3">
+            {% if e.visibility == "public" %}
+              <span class="text-gray-400">—</span>
+            {% else %}
+              {% if e.target_roles %}
+                <div class="flex flex-wrap gap-1">
+                  {% for r in e.target_roles %}
+                    <span class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                      {% if r == "resp_sector" %}Resp. sector{% elif r == "resp_zona" %}Resp. zona{% elif r == "resp_grupo" %}Resp. grupo{% elif r == "miembro" %}Miembro{% else %}{{ r }}{% endif %}
+                    </span>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <span class="text-gray-400">Ninguno</span>
+              {% endif %}
+            {% endif %}
+          </td>
+
+          <!-- Divisiones seleccionadas (si es custom) -->
+          <td class="px-6 py-3">
+            {% if e.visibility == "public" %}
+              <span class="text-gray-400">—</span>
+            {% else %}
+              {% if e.target_divisions %}
+                <div class="flex flex-wrap gap-1">
+                  {% for d in e.target_divisions %}
+                    <span class="text-xs px-2 py-1 rounded-full bg-slate-100 text-slate-700">
+                      {% if d == "djm" %}DJM{% elif d == "djf" %}DJF{% elif d == "caballeros" %}Caballeros{% elif d == "damas" %}Damas{% else %}{{ d }}{% endif %}
+                    </span>
+                  {% endfor %}
+                </div>
+              {% else %}
+                <span class="text-gray-400">Ninguna</span>
+              {% endif %}
+            {% endif %}
+          </td>
+
+          <td class="px-6 py-3">
+            {% if e.is_public %}Sí{% else %}No{% endif %}
+          </td>
+
+          <td class="px-6 py-3 text-right whitespace-nowrap">
+            <a class="px-3 py-1.5 rounded-full border text-sm hover:bg-gray-50"
+               href="{% url 'edit_event' e.id %}">Editar</a>
+            <a class="px-3 py-1.5 rounded-full border text-sm hover:bg-gray-50"
+               href="{% url 'delete_event' e.id %}">Eliminar</a>
           </td>
         </tr>
         {% empty %}
-        <tr><td colspan="5" class="px-6 py-6 text-gray-500">No hay actividades este mes.</td></tr>
+        <tr>
+          <td colspan="8" class="px-6 py-6 text-gray-500">No hay actividades este mes.</td>
+        </tr>
         {% endfor %}
       </tbody>
+
     </table>
   </div>
 

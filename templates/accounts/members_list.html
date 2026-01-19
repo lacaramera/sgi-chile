@@ -8,10 +8,11 @@
   <div class="bg-white rounded-3xl shadow-sm px-8 py-5 border border-gray-100 flex items-center justify-between">
     <h1 class="text-2xl font-bold text-sky-800">Miembros</h1>
     <div class="flex items-center gap-3">
-      <a href="{% url 'members_export' %}{% if querystring %}?{{ querystring }}{% endif %}"
-         class="px-5 py-2 rounded-full border border-gray-300 text-sm font-semibold hover:bg-gray-50">
+      <a href="{% if division_national_mode %}{% url 'members_division_national_export' %}{% else %}{% url 'members_export' %}{% endif %}{% if querystring %}?{{ querystring }}{% endif %}"
+        class="px-5 py-2 rounded-full border border-gray-300 text-sm font-semibold hover:bg-gray-50">
         Descargar CSV
       </a>
+
       <a href="{% url 'create_member' %}"
          class="px-5 py-2 rounded-full bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700">
         + Crear miembro
@@ -38,39 +39,53 @@
       </select>
     </div>
 
+    {% if can_filter_sector %}
     <div>
       <label class="text-xs text-gray-500">Sector</label>
       <select id="sectorSelect" name="sector_id" class="w-full rounded-full px-4 py-2 border border-gray-200">
         <option value="">— Todos —</option>
         {% for s in sectors %}
-          <option value="{{ s.id }}" {% if selected_sector_id == s.id|stringformat:"s" %}selected{% endif %}>
-            {{ s.name }}
-          </option>
+          <option value="{{ s.id }}" {% if selected_sector_id == s.id|stringformat:"s" %}selected{% endif %}>{{ s.name }}</option>
         {% endfor %}
       </select>
     </div>
+    {% endif %}
 
+
+    {% if can_filter_zona %}
     <div>
       <label class="text-xs text-gray-500">Zona</label>
       <select id="zonaSelect" name="zona_id" class="w-full rounded-full px-4 py-2 border border-gray-200" {% if not selected_sector_id %}disabled{% endif %}>
         <option value="">— Todas —</option>
         {% for z in zonas %}
-          <option value="{{ z.id }}" {% if selected_zona_id == z.id|stringformat:"s" %}selected{% endif %}>
-            {{ z.name }}
-          </option>
+          <option value="{{ z.id }}" {% if selected_zona_id == z.id|stringformat:"s" %}selected{% endif %}>{{ z.name }}</option>
         {% endfor %}
       </select>
     </div>
+    {% endif %}
 
+
+    {% if can_filter_grupo %}
     <div>
       <label class="text-xs text-gray-500">Grupo</label>
       <select id="grupoSelect" name="group_id" class="w-full rounded-full px-4 py-2 border border-gray-200" {% if not selected_zona_id %}disabled{% endif %}>
         <option value="">— Todos —</option>
         {% for g in grupos %}
-          <option value="{{ g.id }}" {% if selected_group_id == g.id|stringformat:"s" %}selected{% endif %}>
-            {{ g.name }}
-          </option>
+          <option value="{{ g.id }}" {% if selected_group_id == g.id|stringformat:"s" %}selected{% endif %}>{{ g.name }}</option>
         {% endfor %}
+      </select>
+    </div>
+    {% endif %}
+
+
+    <div>
+      <label class="text-xs text-gray-500">División</label>
+      <select name="division" class="w-full rounded-full px-4 py-2 border border-gray-200">
+        <option value="">— Todas —</option>
+        <option value="djm" {% if selected_division == "djm" %}selected{% endif %}>DJM</option>
+        <option value="djf" {% if selected_division == "djf" %}selected{% endif %}>DJF</option>
+        <option value="caballero" {% if selected_division == "caballero" %}selected{% endif %}>Caballero</option>
+        <option value="dama" {% if selected_division == "dama" %}selected{% endif %}>Dama</option>
       </select>
     </div>
 

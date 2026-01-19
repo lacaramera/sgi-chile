@@ -11,34 +11,121 @@
 
     <div>
       <label class="block text-sm font-semibold mb-1">Título *</label>
-      <input name="title" value="{{ event.title|default:'' }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+      <input name="title" value="{{ event.title|default:'' }}"
+             class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
     </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
         <label class="block text-sm font-semibold mb-1">Fecha *</label>
-        <input type="date" name="date" value="{{ event.date|date:'Y-m-d' }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+        <input type="date" name="date" value="{{ event.date|date:'Y-m-d' }}"
+               class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
       </div>
       <div>
         <label class="block text-sm font-semibold mb-1">Hora</label>
-        <input type="time" name="time" value="{% if event.time %}{{ event.time|time:'H:i' }}{% endif %}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+        <input type="time" name="time" value="{% if event.time %}{{ event.time|time:'H:i' }}{% endif %}"
+               class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
       </div>
     </div>
 
     <div>
       <label class="block text-sm font-semibold mb-1">Lugar</label>
-      <input name="location" value="{{ event.location|default:'' }}" class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
+      <input name="location" value="{{ event.location|default:'' }}"
+             class="w-full rounded-2xl border border-gray-200 px-4 py-2"/>
     </div>
-
 
     <div>
       <label class="block text-sm font-semibold mb-1">Descripción</label>
-      <textarea name="description" class="w-full rounded-2xl border border-gray-200 px-4 py-2" rows="4">{{ event.description|default:'' }}</textarea>
+      <textarea name="description"
+                class="w-full rounded-2xl border border-gray-200 px-4 py-2"
+                rows="4">{{ event.description|default:'' }}</textarea>
     </div>
 
-    <div class="flex items-center gap-2">
-      <input id="is_public" type="checkbox" name="is_public" {% if event and event.is_public %}checked{% endif %} class="h-4 w-4"/>
-      <label for="is_public" class="text-sm font-semibold">Visible para todos (público)</label>
+    {# ✅ NUEVO: VISIBILIDAD #}
+    <div>
+      <label class="block text-sm font-semibold mb-1">Visibilidad *</label>
+      <select id="visibility" name="visibility"
+              class="w-full rounded-2xl border border-gray-200 px-4 py-2">
+        <option value="public" {% if event.visibility|default:"public" == "public" %}selected{% endif %}>
+          Visible para todos (público)
+        </option>
+        <option value="custom" {% if event.visibility == "custom" %}selected{% endif %}>
+          Personalizado (roles/divisiones)
+        </option>
+      </select>
+      <p class="text-xs text-gray-500 mt-1">
+        Admin/Directiva siempre verán todo.
+      </p>
+    </div>
+
+    {# ✅ NUEVO: CHECKBOXES (solo si custom) #}
+    <div id="audienceBox" class="rounded-2xl border border-gray-200 p-4 bg-slate-50">
+      <div class="font-semibold text-slate-800 mb-2">¿Quiénes pueden ver esta actividad?</div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+        <!-- Roles -->
+        <div>
+          <div class="text-sm font-semibold text-slate-700 mb-2">Roles</div>
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="target_roles" value="resp_sector"
+                   {% if event and event.target_roles and "resp_sector" in event.target_roles %}checked{% endif %}>
+            Responsable sector / región
+          </label>
+
+          <label class="flex items-center gap-2 text-sm mt-1">
+            <input type="checkbox" name="target_roles" value="resp_zona"
+                   {% if event and event.target_roles and "resp_zona" in event.target_roles %}checked{% endif %}>
+            Responsable zona
+          </label>
+
+          <label class="flex items-center gap-2 text-sm mt-1">
+            <input type="checkbox" name="target_roles" value="resp_grupo"
+                   {% if event and event.target_roles and "resp_grupo" in event.target_roles %}checked{% endif %}>
+            Responsable grupo
+          </label>
+
+          <label class="flex items-center gap-2 text-sm mt-1">
+            <input type="checkbox" name="target_roles" value="miembro"
+                   {% if event and event.target_roles and "miembro" in event.target_roles %}checked{% endif %}>
+            Miembro (normal)
+          </label>
+        </div>
+
+        <!-- Divisiones -->
+        <div>
+          <div class="text-sm font-semibold text-slate-700 mb-2">Divisiones</div>
+
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" name="target_divisions" value="djm"
+                   {% if event and event.target_divisions and "djm" in event.target_divisions %}checked{% endif %}>
+            DJM (Juvenil Masculina)
+          </label>
+
+          <label class="flex items-center gap-2 text-sm mt-1">
+            <input type="checkbox" name="target_divisions" value="djf"
+                   {% if event and event.target_divisions and "djf" in event.target_divisions %}checked{% endif %}>
+            DJF (Juvenil Femenina)
+          </label>
+
+          <label class="flex items-center gap-2 text-sm mt-1">
+            <input type="checkbox" name="target_divisions" value="caballeros"
+                   {% if event and event.target_divisions and "caballeros" in event.target_divisions %}checked{% endif %}>
+            Caballeros
+          </label>
+
+          <label class="flex items-center gap-2 text-sm mt-1">
+            <input type="checkbox" name="target_divisions" value="damas"
+                   {% if event and event.target_divisions and "damas" in event.target_divisions %}checked{% endif %}>
+            Damas
+          </label>
+        </div>
+
+      </div>
+
+      <p class="text-xs text-gray-500 mt-3">
+        Tip: si no marcas nada en “Personalizado”, nadie (fuera de admin/directiva) la verá.
+      </p>
     </div>
 
     <div class="pt-2 flex gap-3">
@@ -51,4 +138,20 @@
     </div>
   </form>
 </div>
+
+<script>
+  (function(){
+    const sel = document.getElementById("visibility");
+    const box = document.getElementById("audienceBox");
+
+    function sync(){
+      const v = sel.value;
+      box.style.display = (v === "custom") ? "block" : "none";
+    }
+
+    sel.addEventListener("change", sync);
+    sync();
+  })();
+</script>
+
 {% endblock %}

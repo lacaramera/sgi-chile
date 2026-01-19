@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
-from .models import User, Event, Contribution, ContributionReport, Notification, Sector, Zona, Grupo, FortunaIssue, FortunaPurchase, Profile, DivisionPost
+from .models import User, Event, Contribution, ContributionReport, Notification, Sector, Zona, Grupo, FortunaIssue, FortunaPurchase, Profile, DivisionPost, ImportantDate, Notice, NewsPost
 from django.utils.html import format_html
 from .utils import send_activation_email  # si ya lo tienes
 
@@ -143,3 +143,45 @@ class DivisionPostAdmin(admin.ModelAdmin):
         }),
     )
     readonly_fields = ("created_at",)
+
+@admin.register(ImportantDate)
+class ImportantDateAdmin(admin.ModelAdmin):
+    list_display = ("date", "title", "scope", "is_active", "priority")
+    list_filter = ("scope", "is_active")
+    search_fields = ("title", "description")
+    ordering = ("-priority", "date")
+
+
+from django.contrib import admin
+from .models import Notice
+
+@admin.register(Notice)
+class NoticeAdmin(admin.ModelAdmin):
+    list_display = ("title", "target", "is_pinned", "priority", "is_active", "created_at")
+    list_filter = ("target", "is_pinned", "is_active")
+    search_fields = ("title", "body")
+
+    # ✅ para que aparezca arriba en el form y sea fácil de encontrar
+    fields = (
+        "title", "body", "image",
+        "target", "sector", "zona", "grupo",
+        "is_pinned", "priority", "is_active",
+        "start_at", "end_at",
+        "created_by",
+    )
+
+@admin.register(NewsPost)
+class NewsPostAdmin(admin.ModelAdmin):
+    list_display = (
+        "title", "scope", "target", "is_pinned", "priority",
+        "is_published", "published_at", "source_url"
+    )
+    list_filter = ("scope", "target", "is_pinned", "is_published")
+    search_fields = ("title", "summary", "body", "source_url")
+    date_hierarchy = "published_at"
+
+    fields = (
+        "title", "summary", "body", "image", "source_url",
+        "scope", "target", "sector", "zona", "grupo",
+        "is_pinned", "priority", "is_published", "published_at",
+    )

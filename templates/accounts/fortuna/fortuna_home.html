@@ -33,6 +33,25 @@
         </div>
       </a>
 
+
+       {% if user.role == "resp_sector" or user.role == "resp_zona" or user.role == "resp_grupo" or user.role == "admin" or user.role == "directiva" %}
+
+        <a href="{% url 'fortuna_comprar' %}?for=other" class="block">
+          <div class="flex items-center gap-4 px-6 py-4 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow hover:shadow-md transition-shadow">
+            <div class="flex items-center justify-center w-10 h-10 rounded-full bg-white/15">
+              <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                <circle cx="9" cy="7" r="3"/>
+                <path d="M22 11v6"/>
+                <path d="M19 14h6"/>
+              </svg>
+            </div>
+            <span class="font-semibold text-lg">Informar pago por un miembro </span>
+          </div>
+          
+        </a>
+        {% endif %}
+
       <!-- Ediciones anteriores -->
       <a href="{% url 'fortuna_ediciones' %}" class="block">
         <div class="flex items-center gap-4 px-6 py-4 rounded-2xl bg-gradient-to-r from-blue-600 to-sky-500 text-white shadow hover:shadow-md transition-shadow">
@@ -126,7 +145,7 @@
                 <path d="M7 2v19"/>
               </svg>
             </span>
-            Diciembre
+            Enero
           </span>
         </div>
 
