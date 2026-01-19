@@ -157,20 +157,3 @@ if DEBUG:
     print("SMTP PASS SET:", bool(EMAIL_HOST_PASSWORD))
 
 
-if os.getenv("CREATE_INITIAL_ADMIN") == "true":
-    try:
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-
-        username = "admin"
-        email = "admin@sgi-chile.cl"
-        password = "1qa2ws3edAdmin@"
-
-        if not User.objects.filter(username=username).exists():
-            User.objects.create_superuser(username=username, email=email, password=password)
-            print("Superuser created (direct)")
-        else:
-            print("Superuser already exists (direct)")
-    except Exception as e:
-        print("Admin creation failed:", e)
-
