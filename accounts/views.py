@@ -1309,73 +1309,61 @@ def edit_member(request, user_id):
         "member_zona_id": member_zona_id,
     })
 
-@login_required
 def ajax_zonas_by_sector(request):
-    u = request.user
     sector_id = (request.GET.get("sector_id") or "").strip()
+    if not sector_id:
+        return JsonResponse({"zonas": []})
 
+    # ✅ Registro público: devolver siempre
+    if not request.user.is_authenticated:
+        zonas = Zona.objects.filter(sector_id=sector_id).order_by("name")
+        return JsonResponse({"zonas": [{"id": z.id, "name": z.name} for z in zonas]})
+
+    # ✅ Si está logueado, aplicas tus reglas por rol
+    u = request.user
     zonas = Zona.objects.none()
 
-    # --- ADMIN / DIRECTIVA / SUPERUSER ---
     if u.is_superuser or u.is_admin_like():
-        if sector_id:
-            zonas = Zona.objects.filter(sector_id=sector_id).order_by("name")
-
-    # --- RESPONSABLE SECTOR ---
+        zonas = Zona.objects.filter(sector_id=sector_id).order_by("name")
     elif u.is_responsable_sector():
         user_sector = u.get_sector()
-        if user_sector and sector_id and str(user_sector.id) == sector_id:
+        if user_sector and str(user_sector.id) == sector_id:
             zonas = Zona.objects.filter(sector_id=user_sector.id).order_by("name")
-
-    # --- RESPONSABLE ZONA ---
-    elif u.is_responsable_zona():
+    elif u.is_responsable_zona() or u.is_responsable_grupo():
         if u.group and u.group.zona:
             zonas = Zona.objects.filter(id=u.group.zona_id)
 
-    # --- RESPONSABLE GRUPO ---
-    elif u.is_responsable_grupo():
-        if u.group and u.group.zona:
-            zonas = Zona.objects.filter(id=u.group.zona_id)
-
-    data = [{"id": z.id, "name": z.name} for z in zonas]
-    return JsonResponse({"zonas": data})
+    return JsonResponse({"zonas": [{"id": z.id, "name": z.name} for z in zonas]})
 
 
-@login_required
 def ajax_grupos_by_zona(request):
-    u = request.user
     zona_id = (request.GET.get("zona_id") or "").strip()
+    if not zona_id:
+        return JsonResponse({"grupos": []})
 
+    # ✅ Registro público: devolver siempre
+    if not request.user.is_authenticated:
+        grupos = Grupo.objects.filter(zona_id=zona_id).order_by("name")
+        return JsonResponse({"grupos": [{"id": g.id, "name": g.name} for g in grupos]})
+
+    # ✅ Logueado: tus reglas
+    u = request.user
     grupos = Grupo.objects.none()
 
-    # --- ADMIN / DIRECTIVA / SUPERUSER ---
     if u.is_superuser or u.is_admin_like():
-        if zona_id:
-            grupos = Grupo.objects.filter(zona_id=zona_id).order_by("name")
-
-    # --- RESPONSABLE SECTOR ---
+        grupos = Grupo.objects.filter(zona_id=zona_id).order_by("name")
     elif u.is_responsable_sector():
         user_sector = u.get_sector()
-        if user_sector and zona_id:
-            grupos = Grupo.objects.filter(
-                zona_id=zona_id,
-                zona__sector_id=user_sector.id
-            ).order_by("name")
-
-    # --- RESPONSABLE ZONA ---
+        if user_sector:
+            grupos = Grupo.objects.filter(zona_id=zona_id, zona__sector_id=user_sector.id).order_by("name")
     elif u.is_responsable_zona():
         if u.group and u.group.zona and zona_id == str(u.group.zona_id):
             grupos = Grupo.objects.filter(zona_id=u.group.zona_id).order_by("name")
-
-    # --- RESPONSABLE GRUPO ---
     elif u.is_responsable_grupo():
         if u.group and zona_id == str(u.group.zona_id):
             grupos = Grupo.objects.filter(id=u.group.id)
 
-    data = [{"id": g.id, "name": g.name} for g in grupos]
-    return JsonResponse({"grupos": data})
-
-
+    return JsonResponse({"grupos": [{"id": g.id, "name": g.name} for g in grupos]})
 @login_required
 def profile(request, user_id=None):
     """
