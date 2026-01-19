@@ -118,36 +118,53 @@
     grupoSelect.disabled = true;
   }
 
-  sectorSelect.addEventListener("change", () => {
+  async function fetchJson(url){
+    const r = await fetch(url, { headers: { "Accept": "application/json" } });
+    const text = await r.text();
+    if (!r.ok) {
+      console.error("FETCH ERROR", r.status, url, text);
+      throw new Error(`HTTP ${r.status}`);
+    }
+    try { return JSON.parse(text); }
+    catch(e){ console.error("JSON PARSE ERROR", url, text); throw e; }
+  }
+
+  sectorSelect.addEventListener("change", async () => {
     const sectorId = sectorSelect.value;
     resetZonas(); resetGrupos();
     if (!sectorId) return;
 
-    fetch(`/accounts/ajax/zonas/?sector_id=${sectorId}`)
-      .then(r => r.json())
-      .then(data => {
-        (data.zonas || []).forEach(z => {
-          zonaSelect.innerHTML += `<option value="${z.id}">${z.name}</option>`;
-        });
-        zonaSelect.disabled = false;
+    try{
+      const data = await fetchJson(`/accounts/ajax/zonas/?sector_id=${sectorId}`);
+      console.log("zonas response:", data);
+
+      (data.zonas || []).forEach(z => {
+        zonaSelect.insertAdjacentHTML("beforeend", `<option value="${z.id}">${z.name}</option>`);
       });
+      zonaSelect.disabled = false;
+    }catch(e){
+      // deja el select deshabilitado, pero al menos verás el error
+    }
   });
 
-  zonaSelect.addEventListener("change", () => {
+  zonaSelect.addEventListener("change", async () => {
     const zonaId = zonaSelect.value;
     resetGrupos();
     if (!zonaId) return;
 
-    fetch(`/accounts/ajax/grupos/?zona_id=${zonaId}`)
-      .then(r => r.json())
-      .then(data => {
-        (data.grupos || []).forEach(g => {
-          grupoSelect.innerHTML += `<option value="${g.id}">${g.name}</option>`;
-        });
-        grupoSelect.disabled = false;
+    try{
+      const data = await fetchJson(`/accounts/ajax/grupos/?zona_id=${zonaId}`);
+      console.log("grupos response:", data);
+
+      (data.grupos || []).forEach(g => {
+        grupoSelect.insertAdjacentHTML("beforeend", `<option value="${g.id}">${g.name}</option>`);
       });
+      grupoSelect.disabled = false;
+    }catch(e){
+    }
   });
 })();
 </script>
+
 
 {% endblock %}
