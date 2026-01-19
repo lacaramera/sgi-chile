@@ -159,6 +159,3 @@ if DEBUG:
     print("SMTP PASS SET:", bool(EMAIL_HOST_PASSWORD))
 
 
-print("MEDIA_ROOT:", MEDIA_ROOT)
-
-print("MEDIA_ROOT:", settings.MEDIA_ROOT)
