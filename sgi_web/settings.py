@@ -7,10 +7,9 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# === ARCHIVOS SUBIDOS POR USUARIOS ===
-
 MEDIA_URL = "/media/"
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", "/data/media"))
+
 os.makedirs(MEDIA_ROOT, exist_ok=True)
 
 
@@ -133,7 +132,7 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
