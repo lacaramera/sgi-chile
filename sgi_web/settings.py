@@ -1,4 +1,5 @@
 from pathlib import Path
+import dj_database_url
 import os
 from dotenv import load_dotenv
 load_dotenv()
@@ -10,10 +11,15 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
-SECRET_KEY = 'REEMPLAZA_POR_UNA_SECRETA_LARGA'  # cámbiala para producción
-DEBUG = True
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-key")
+DEBUG = os.getenv("DEBUG", "True").lower() == "true"
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
+ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
+
+
+
+CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS", "").split(",")
+
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -40,6 +46,7 @@ LOGIN_REDIRECT_URL = 'home'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -70,13 +77,26 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'sgi_web.wsgi.application'
 
-# DB: SQLite para desarrollo (luego migrar a PostgreSQL en producción)
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if DATABASE_URL:
+    # Railway / Producción (Postgres)
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            ssl_require=True,  # Railway normalmente usa SSL
+        )
     }
-}
+else:
+    # Local (SQLite)
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
+
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',},
@@ -97,7 +117,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
-
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Usar el modelo custom que vamos a crear
@@ -115,6 +135,6 @@ EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() == "true"
 
 DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "SGI Chile <no-reply@sgi-chile.cl>")
 
-
-print("SMTP USER:", EMAIL_HOST_USER)
-print("SMTP PASS SET:", bool(EMAIL_HOST_PASSWORD))
+if DEBUG:
+    print("SMTP USER:", EMAIL_HOST_USER)
+    print("SMTP PASS SET:", bool(EMAIL_HOST_PASSWORD))
