@@ -4,12 +4,16 @@ from accounts import views as accounts_views
 from django.conf import settings
 from django.conf.urls.static import static
 from django.shortcuts import redirect
+from django.views.static import serve
+
+
 
 def root_redirect(request):
     return redirect("login")  
 
 
 urlpatterns = [
+    path("media/<path:path>", serve, {"document_root": settings.MEDIA_ROOT}),
     path('admin/', admin.site.urls),
     path("", root_redirect, name="root"),
     path("home/", accounts_views.home, name="home"),
@@ -26,7 +30,7 @@ urlpatterns = [
     path("miembros/<int:user_id>/editar/", accounts_views.edit_member, name="edit_member"),
     path("miembros/", accounts_views.members_list, name="members_list"),
     path("miembros/exportar/", accounts_views.members_export, name="members_export"),
-
+    
 
 ]
 
