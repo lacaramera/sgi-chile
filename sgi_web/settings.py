@@ -14,7 +14,17 @@ MEDIA_ROOT = BASE_DIR / "media"
 SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-secret-key")
 DEBUG = os.getenv("DEBUG", "True").lower() == "true"
 
-ALLOWED_HOSTS = [h.strip() for h in os.getenv("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",") if h.strip()]
+def _split_env_list(name: str, default: str = ""):
+    value = os.getenv(name, default)
+    return [x.strip() for x in value.split(",") if x.strip()]
+
+ALLOWED_HOSTS = _split_env_list("ALLOWED_HOSTS", "127.0.0.1,localhost")
+
+railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+if railway_domain:
+    railway_domain = railway_domain.strip()
+    if railway_domain not in ALLOWED_HOSTS:
+        ALLOWED_HOSTS.append(railway_domain)
 
 
 
