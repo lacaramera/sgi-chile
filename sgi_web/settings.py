@@ -155,3 +155,11 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "SGI Chile <no-reply@sgi-ch
 if DEBUG:
     print("SMTP USER:", EMAIL_HOST_USER)
     print("SMTP PASS SET:", bool(EMAIL_HOST_PASSWORD))
+
+
+if os.getenv("CREATE_INITIAL_ADMIN") == "true":
+    try:
+        from django.core.management import call_command
+        call_command("create_initial_admin")
+    except Exception as e:
+        print("Admin creation skipped:", e)
