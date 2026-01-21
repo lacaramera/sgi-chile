@@ -2528,31 +2528,40 @@ def register_member(request):
     """
     Registro público:
     - username = rut
-    - crea usuario inactivo
+    - crea usuario INACTIVO
     - envía correo de activación para crear contraseña
+    - si el correo falla, NO deja el usuario creado
     """
-   # if request.user.is_authenticated:
-      #  return redirect("home")
 
     if request.method == "POST":
         form = SelfRegisterForm(request.POST)
+
         if form.is_valid():
-            user = form.save()
             try:
-                _send_activation_email(request, user)
-            except Exception as e:
-                logger.exception("Fallo enviando correo de activación a %s", user.email)
-                messages.warning(
+                # 🔒 Todo ocurre en una transacción
+                with transaction.atomic():
+                    user = form.save()
+                    _send_activation_email(request, user)
+
+                messages.success(
                     request,
-                    "Cuenta creada, pero no se pudo enviar el correo. "
-                    "Contacta al administrador para reenviar activación."
+                    "✅ Registro recibido. Revisa tu correo para activar tu cuenta y crear tu contraseña."
                 )
                 return redirect("login")
-            messages.success(
-                request,
-                "✅ Registro recibido. Revisa tu correo para activar tu cuenta y crear tu contraseña."
-            )
-            return redirect("login")
+
+            except Exception:
+                # ❌ Si falla el correo → rollback automático
+                logger.exception(
+                    "Fallo enviando correo de activación a %s",
+                    form.cleaned_data.get("email")
+                )
+                messages.error(
+                    request,
+                    "❌ No se pudo enviar el correo de activación por un problema de conexión. "
+                    "Intenta más tarde o contacta al administrador."
+                )
+                return redirect("register")
+
     else:
         form = SelfRegisterForm()
 
@@ -2560,7 +2569,6 @@ def register_member(request):
         "form": form,
         "sectors": Sector.objects.all().order_by("name"),
     })
-
 
 def _news_for_user_q(u):
     """
