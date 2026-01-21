@@ -26,23 +26,22 @@ def is_valid_rut_format(value: str) -> bool:
     return bool(value and RUT_RE.match(value))
 
 
-def send_activation_email(user, request):
-    """
-    Envía un correo de activación con un token seguro que apunta a la vista 'activate'.
-    En desarrollo el backend de email puede ser console, así que se imprimirá en la terminal.
-    """
-    uid = urlsafe_base64_encode(force_bytes(user.pk))
-    token = default_token_generator.make_token(user)
-    path = reverse('activate', kwargs={'uidb64': uid, 'token': token})
-    activation_link = request.build_absolute_uri(path)
-    subject = 'Activa tu cuenta — Soka Gakkai Chile'
-    message = render_to_string('accounts/activation_email.txt', {
-        'user': user,
-        'activation_link': activation_link,
-    })
-    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@sokagakkai.cl')
+#def send_activation_email(user, request):
+    
+   
+    
+  #  uid = urlsafe_base64_encode(force_bytes(user.pk))
+ #   token = default_token_generator.make_token(user)
+    #path = reverse('activate', kwargs={'uidb64': uid, 'token': token})
+   # activation_link = request.build_absolute_uri(path)
+  #  subject = 'Activa tu cuenta — Soka Gakkai Chile'
+ #   message = render_to_string('accounts/activation_email.txt', {
+    #    'user': user,
+   #     'activation_link': activation_link,
+  #  })
+ #   from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@sokagakkai.cl')
     # send_mail devuelve el número de emails enviados
-    send_mail(subject, message, from_email, [user.email])
+#    send_mail(subject, message, from_email, [user.email])
 
 
 def send_email_resend(subject: str, message: str, to_email: str):
