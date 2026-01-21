@@ -7,7 +7,8 @@ from django.conf import settings
 from django.core.mail import send_mail
 
 
-import re
+
+import re, requests
 
 RUT_RE = re.compile(r"^\d{7,8}-[\dkK]$")
 
@@ -44,3 +45,26 @@ def send_activation_email(user, request):
     send_mail(subject, message, from_email, [user.email])
 
 
+def send_email_resend(subject: str, message: str, to_email: str):
+    if not settings.RESEND_API_KEY:
+        raise RuntimeError("RESEND_API_KEY no configurada")
+
+    response = requests.post(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "from": settings.DEFAULT_FROM_EMAIL,
+            "to": [to_email],
+            "subject": subject,
+            "text": message,
+        },
+        timeout=10,
+    )
+
+    if response.status_code >= 400:
+        raise RuntimeError(
+            f"Error Resend {response.status_code}: {response.text}"
+        )

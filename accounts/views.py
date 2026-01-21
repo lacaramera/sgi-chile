@@ -18,7 +18,7 @@ from django.conf import settings
 from .forms import MemberCreateForm, MemberEditForm, SelfRegisterForm
 from django.core.exceptions import PermissionDenied
 from django.contrib import messages
-from django.db import models, connection
+from django.db import models, connection, transaction
 from django.template.loader import get_template
 from calendar import monthrange
 from django.views.decorators.clickjacking import xframe_options_sameorigin
@@ -27,6 +27,7 @@ from urllib.parse import quote, unquote
 from django.core.paginator import Paginator
 from datetime import date
 from dateutil.relativedelta import relativedelta
+from .utils import send_email_resend
 
 logger = logging.getLogger(__name__)
 
@@ -395,12 +396,10 @@ def _send_activation_email(request, user: User):
     logger.info("Enviando activación a=%s host=%s user=%s",
                 user.email, getattr(settings, "EMAIL_HOST", None), getattr(settings, "EMAIL_HOST_USER", None))
 
-    send_mail(
-        subject,
-        message,
-        getattr(settings, "DEFAULT_FROM_EMAIL", "no-reply@sgi-chile.cl"),
-        [user.email],
-        fail_silently=False,
+    send_email_resend(
+        subject=subject,
+        message=message,
+        to_email=user.email,
     )
 
 
