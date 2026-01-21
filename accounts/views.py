@@ -28,6 +28,8 @@ from django.core.paginator import Paginator
 from datetime import date
 from dateutil.relativedelta import relativedelta
 
+logger = logging.getLogger(__name__)
+
 
 def _has_fortuna_access(user, issue: FortunaIssue) -> bool:
     # buyer manual
@@ -373,19 +375,25 @@ def home(request):
     return render(request, "home.html", context)
 
 
+import logging
+logger = logging.getLogger(__name__)
+
 def _send_activation_email(request, user: User):
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
 
     activation_link = request.build_absolute_uri(
-    reverse("activate", kwargs={"uidb64": uid, "token": quote(token)})
-)
+        reverse("activate", kwargs={"uidb64": uid, "token": quote(token)})
+    )
 
     subject = "Activa tu cuenta - SGI Chile"
     message = get_template("accounts/activation_email.txt").render({
         "user": user,
         "activation_link": activation_link,
     })
+
+    logger.info("Enviando activación a=%s host=%s user=%s",
+                user.email, getattr(settings, "EMAIL_HOST", None), getattr(settings, "EMAIL_HOST_USER", None))
 
     send_mail(
         subject,
@@ -394,6 +402,7 @@ def _send_activation_email(request, user: User):
         [user.email],
         fail_silently=False,
     )
+
 
 def activate_account(request, uidb64, token):
     token = unquote(token)
@@ -2531,13 +2540,14 @@ def register_member(request):
             user = form.save()
             try:
                 _send_activation_email(request, user)
-            except Exception:
+            except Exception as e:
+                logger.exception("Fallo enviando correo de activación a %s", user.email)
                 messages.warning(
                     request,
-                    "Cuenta creada, pero no se pudo enviar el correo. Contacta al administrador para reenviar activación."
+                    "Cuenta creada, pero no se pudo enviar el correo. "
+                    "Contacta al administrador para reenviar activación."
                 )
                 return redirect("login")
-
             messages.success(
                 request,
                 "✅ Registro recibido. Revisa tu correo para activar tu cuenta y crear tu contraseña."
