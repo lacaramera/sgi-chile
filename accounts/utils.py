@@ -8,7 +8,8 @@ from django.core.mail import send_mail
 
 
 
-import re, requests
+import re
+import requests
 
 RUT_RE = re.compile(r"^\d{7,8}-[\dkK]$")
 
@@ -25,7 +26,26 @@ def normalize_rut(value: str) -> str:
 def is_valid_rut_format(value: str) -> bool:
     return bool(value and RUT_RE.match(value))
 
+def send_activation_email(user, request):
+    """
+    ÚNICA fuente de verdad para enviar activación (Register + Admin).
+    """
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
 
+    activation_link = request.build_absolute_uri(
+        reverse("activate", kwargs={"uidb64": uid, "token": token})
+    )
+
+    subject = "Activa tu cuenta - SGI Chile"
+    message = render_to_string("accounts/activation_email.txt", {
+        "user": user,
+        "activation_link": activation_link,
+    })
+
+    send_email_resend(subject=subject, message=message, to_email=user.email)
+
+    
 #def send_activation_email(user, request):
     
    

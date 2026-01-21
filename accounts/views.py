@@ -27,7 +27,7 @@ from urllib.parse import quote, unquote
 from django.core.paginator import Paginator
 from datetime import date
 from dateutil.relativedelta import relativedelta
-from .utils import send_email_resend
+from .utils import send_email_resend, send_activation_email
 
 logger = logging.getLogger(__name__)
 
@@ -379,28 +379,33 @@ def home(request):
 import logging
 logger = logging.getLogger(__name__)
 
-def _send_activation_email(request, user: User):
-    uid = urlsafe_base64_encode(force_bytes(user.pk))
-    token = default_token_generator.make_token(user)
+#def _send_activation_email(request, user: User):
+ #   uid = urlsafe_base64_encode(force_bytes(user.pk))
+  #  token = default_token_generator.make_token(user)
 
-    activation_link = request.build_absolute_uri(
-        reverse("activate", kwargs={"uidb64": uid, "token": quote(token)})
-    )
+#    activation_link = request.build_absolute_uri(
+ #       reverse("activate", kwargs={"uidb64": uid, "token": quote(token)})
+  #  )
 
-    subject = "Activa tu cuenta - SGI Chile"
-    message = get_template("accounts/activation_email.txt").render({
-        "user": user,
-        "activation_link": activation_link,
-    })
+   # subject = "Activa tu cuenta - SGI Chile"
+    #message = get_template("accounts/activation_email.txt").render({
+     #   "user": user,
+      #  "activation_link": activation_link,
+#    })
+#
+ #   logger.info(
+  #      "Enviando activación por Resend → to=%s from=%s api_key_set=%s",
+   #     user.email,
+    #    getattr(settings, "DEFAULT_FROM_EMAIL", None),
+     #   bool(getattr(settings, "RESEND_API_KEY", None)),
+    #)
 
-    logger.info("Enviando activación a=%s host=%s user=%s",
-                user.email, getattr(settings, "EMAIL_HOST", None), getattr(settings, "EMAIL_HOST_USER", None))
 
-    send_email_resend(
-        subject=subject,
-        message=message,
-        to_email=user.email,
-    )
+ #   send_email_resend(
+  #      subject=subject,
+   #     message=message,
+    #    to_email=user.email,
+    #)
 
 
 def activate_account(request, uidb64, token):
@@ -2540,7 +2545,8 @@ def register_member(request):
                 # 🔒 Todo ocurre en una transacción
                 with transaction.atomic():
                     user = form.save()
-                    _send_activation_email(request, user)
+                    send_activation_email(user, request)
+
 
                 messages.success(
                     request,
