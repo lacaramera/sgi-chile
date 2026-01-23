@@ -1,15 +1,12 @@
-﻿from django.urls import reverse
-from django.utils.http import urlsafe_base64_encode
-from django.utils.encoding import force_bytes
-from django.contrib.auth.tokens import default_token_generator
-from django.template.loader import render_to_string
+﻿import re
 from django.conf import settings
+from django.contrib.auth.tokens import default_token_generator
 from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.urls import reverse
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 
-
-
-import re
-import requests
 
 RUT_RE = re.compile(r"^\d{7,8}-[\dkK]$")
 
@@ -17,18 +14,18 @@ def normalize_rut(value: str) -> str:
     if not value:
         return value
     v = value.strip().replace(".", "").replace(" ", "")
-    # si viene sin guion, intentar ponerlo (opcional)
-    if "-" not in v and len(v) in (8, 9):  # 7-8 cuerpo + DV
+    if "-" not in v and len(v) in (8, 9):
         v = v[:-1] + "-" + v[-1]
-    v = v.upper()
-    return v
+    return v.upper()
 
 def is_valid_rut_format(value: str) -> bool:
     return bool(value and RUT_RE.match(value))
 
+
 def send_activation_email(user, request):
     """
     ÚNICA fuente de verdad para enviar activación (Register + Admin).
+    Devuelve True/False según si se envió.
     """
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
@@ -43,47 +40,14 @@ def send_activation_email(user, request):
         "activation_link": activation_link,
     })
 
-    send_email_resend(subject=subject, message=message, to_email=user.email)
+    from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None)
 
-    
-#def send_activation_email(user, request):
-    
-   
-    
-  #  uid = urlsafe_base64_encode(force_bytes(user.pk))
- #   token = default_token_generator.make_token(user)
-    #path = reverse('activate', kwargs={'uidb64': uid, 'token': token})
-   # activation_link = request.build_absolute_uri(path)
-  #  subject = 'Activa tu cuenta — Soka Gakkai Chile'
- #   message = render_to_string('accounts/activation_email.txt', {
-    #    'user': user,
-   #     'activation_link': activation_link,
-  #  })
- #   from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'no-reply@sokagakkai.cl')
-    # send_mail devuelve el número de emails enviados
-#    send_mail(subject, message, from_email, [user.email])
-
-
-def send_email_resend(subject: str, message: str, to_email: str):
-    if not settings.RESEND_API_KEY:
-        raise RuntimeError("RESEND_API_KEY no configurada")
-
-    response = requests.post(
-        "https://api.resend.com/emails",
-        headers={
-            "Authorization": f"Bearer {settings.RESEND_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "from": settings.DEFAULT_FROM_EMAIL,
-            "to": [to_email],
-            "subject": subject,
-            "text": message,
-        },
-        timeout=10,
+    # send_mail devuelve número de correos enviados
+    sent = send_mail(
+        subject=subject,
+        message=message,
+        from_email=from_email,
+        recipient_list=[user.email],
+        fail_silently=False,
     )
-
-    if response.status_code >= 400:
-        raise RuntimeError(
-            f"Error Resend {response.status_code}: {response.text}"
-        )
+    return sent == 1

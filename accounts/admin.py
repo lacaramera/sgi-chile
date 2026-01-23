@@ -6,10 +6,21 @@ from .utils import send_activation_email  # si ya lo tienes
 
 
 def send_activation(modeladmin, request, queryset):
+    ok = 0
+    fail = 0
     for user in queryset:
         if user.email:
-            send_activation_email(user, request)
+            try:
+                if send_activation_email(user, request):
+                    ok += 1
+                else:
+                    fail += 1
+            except Exception:
+                fail += 1
+    modeladmin.message_user(request, f"Activación enviada: {ok} OK, {fail} fallaron.")
+
 send_activation.short_description = "Enviar correo de activación a los usuarios seleccionados"
+
 
 class ProfileInline(admin.StackedInline):
     model = Profile
