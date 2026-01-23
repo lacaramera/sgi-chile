@@ -92,9 +92,27 @@ class SelfRegisterForm(forms.ModelForm):
     - username = rut (obligatorio)
     - NO permite elegir role / flags nacionales
     - Puede elegir: división, fecha ingreso, sector/zona/grupo (group)
-    - queda inactivo hasta activar por correo
+    - ✅ el usuario elige su contraseña en el mismo registro
+    - ✅ queda ACTIVO inmediatamente (sin correo)
     """
     email = forms.EmailField(required=True)
+
+    password1 = forms.CharField(
+        label="Contraseña",
+        required=True,
+        widget=forms.PasswordInput(attrs={
+            "placeholder": "Crea una contraseña",
+            "autocomplete": "new-password",
+        }),
+    )
+    password2 = forms.CharField(
+        label="Confirmar contraseña",
+        required=True,
+        widget=forms.PasswordInput(attrs={
+            "placeholder": "Repite la contraseña",
+            "autocomplete": "new-password",
+        }),
+    )
 
     class Meta:
         model = User
@@ -108,6 +126,7 @@ class SelfRegisterForm(forms.ModelForm):
             "address",
             "division",
             "group",
+            # OJO: password1/password2 NO van aquí porque no son del modelo
         )
         widgets = {
             "birth_date": forms.DateInput(attrs={"type": "date"}),
@@ -133,9 +152,13 @@ class SelfRegisterForm(forms.ModelForm):
         self.fields["join_date"].required = False
 
         # estilos (mismo look SGI)
+        css = "w-full border border-gray-200 rounded-2xl px-4 py-2 text-sm"
         for name, f in self.fields.items():
-            css = "w-full border border-gray-200 rounded-2xl px-4 py-2 text-sm"
             f.widget.attrs.update({"class": css})
+
+        # estilo a passwords (también)
+        self.fields["password1"].widget.attrs.update({"class": css})
+        self.fields["password2"].widget.attrs.update({"class": css})
 
     def clean_rut(self):
         rut_raw = (self.cleaned_data.get("rut") or "").strip()
@@ -158,6 +181,20 @@ class SelfRegisterForm(forms.ModelForm):
             raise ValidationError("Ya existe una cuenta con este correo.")
         return email
 
+    def clean_password1(self):
+        pw = self.cleaned_data.get("password1")
+        if pw:
+            validate_password(pw)
+        return pw
+
+    def clean(self):
+        cleaned = super().clean()
+        p1 = cleaned.get("password1")
+        p2 = cleaned.get("password2")
+        if p1 and p2 and p1 != p2:
+            self.add_error("password2", "Las contraseñas no coinciden.")
+        return cleaned
+
     def save(self, commit=True):
         user = super().save(commit=False)
 
@@ -177,17 +214,17 @@ class SelfRegisterForm(forms.ModelForm):
         user.is_division_national_vice = False
         user.national_division = None
 
-        # ✅ IMPORTANTE: ya NO forzamos group=None
-        # user.group = None  ❌ NO
+        # ✅ activo inmediatamente (ya no hay activación por correo)
+        user.is_active = True
 
-        # cuenta inactiva hasta activar por correo
-        user.is_active = False
-
-        # elige contraseña en el link de activación
-        user.set_unusable_password()
+        # ✅ setear contraseña elegida por el usuario
+        password = self.cleaned_data.get("password1")
+        user.set_password(password)
 
         if commit:
             user.save()
+            self.save_m2m()
+
         return user
     
 

@@ -1,3 +1,5 @@
+
+
 {% extends "base.html" %}
 {% block title %}Registro{% endblock %}
 {% block content %}
@@ -5,7 +7,8 @@
 <div class="max-w-2xl mx-auto bg-white rounded-2xl shadow p-6">
   <h2 class="text-2xl font-extrabold text-sky-800 mb-1">Crear cuenta</h2>
   <p class="text-sm text-gray-500 mb-6">
-    Regístrate con tu RUT. Te enviaremos un correo para activar tu cuenta y crear tu contraseña.
+       <!-- Regístrate con tu RUT. Te enviaremos un correo para activar tu cuenta y crear tu contraseña.-->
+    Regístrate con tu RUT y crea tu contraseña para iniciar sesión.
   </p>
 
   {% if form.errors %}
@@ -57,6 +60,23 @@
       <div class="md:col-span-2">
         <label class="text-sm font-semibold">Dirección (opcional)</label>
         {{ form.address }}
+      </div>
+
+      <!-- 🔐 CONTRASEÑAS -->
+      <div>
+        <label class="text-sm font-semibold">Contraseña</label>
+        {{ form.password1 }}
+        {% if form.password1.errors %}
+          <p class="text-xs text-red-600 mt-1">{{ form.password1.errors|striptags }}</p>
+        {% endif %}
+      </div>
+
+      <div>
+        <label class="text-sm font-semibold">Confirmar contraseña</label>
+        {{ form.password2 }}
+        {% if form.password2.errors %}
+          <p class="text-xs text-red-600 mt-1">{{ form.password2.errors|striptags }}</p>
+        {% endif %}
       </div>
     </div>
 
@@ -136,15 +156,11 @@
 
     try{
       const data = await fetchJson(`/accounts/ajax/zonas/?sector_id=${sectorId}`);
-      console.log("zonas response:", data);
-
       (data.zonas || []).forEach(z => {
         zonaSelect.insertAdjacentHTML("beforeend", `<option value="${z.id}">${z.name}</option>`);
       });
       zonaSelect.disabled = false;
-    }catch(e){
-      // deja el select deshabilitado, pero al menos verás el error
-    }
+    }catch(e){}
   });
 
   zonaSelect.addEventListener("change", async () => {
@@ -154,17 +170,13 @@
 
     try{
       const data = await fetchJson(`/accounts/ajax/grupos/?zona_id=${zonaId}`);
-      console.log("grupos response:", data);
-
       (data.grupos || []).forEach(g => {
         grupoSelect.insertAdjacentHTML("beforeend", `<option value="${g.id}">${g.name}</option>`);
       });
       grupoSelect.disabled = false;
-    }catch(e){
-    }
+    }catch(e){}
   });
 })();
 </script>
-
 
 {% endblock %}
