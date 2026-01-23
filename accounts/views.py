@@ -27,7 +27,7 @@ from urllib.parse import quote, unquote
 from django.core.paginator import Paginator
 from datetime import date
 from dateutil.relativedelta import relativedelta
-from .utils import send_email_resend, send_activation_email
+from .utils import  send_activation_email
 
 logger = logging.getLogger(__name__)
 
@@ -421,7 +421,7 @@ def register_member(request):
         "form": form,
         "sectors": Sector.objects.all().order_by("name"),
     })
-
+    
 #def _send_activation_email(request, user: User):
  #   uid = urlsafe_base64_encode(force_bytes(user.pk))
   #  token = default_token_generator.make_token(user)
@@ -449,6 +449,8 @@ def register_member(request):
    #     message=message,
     #    to_email=user.email,
     #)
+def _send_activation_email(request, user):
+    return send_activation_email(user, request)
 
 
 def activate_account(request, uidb64, token):
