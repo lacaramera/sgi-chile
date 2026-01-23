@@ -2572,39 +2572,84 @@ def my_division_redirect(request):
 
     return redirect("division_home", division=eff)
 
+# este register era cuando se enviaba un email de verificacion 
+#def register_member(request):
+ #   """
+  #  Registro público:
+   # - username = rut
+    #- crea usuario INACTIVO
+    #- envía correo de activación para crear contraseña
+    #- si el correo falla, IGUAL deja el usuario creado (y se puede reenviar desde admin)
+    #"""
+
+#    if request.method == "POST":
+ #       form = SelfRegisterForm(request.POST)
+#
+ #       if form.is_valid():
+  #          user = form.save()  # ✅ se crea sí o sí
+
+   #         try:
+    #            _send_activation_email(request, user)
+
+     #           messages.success(
+      #              request,
+       #             "✅ Registro recibido. Revisa tu correo para activar tu cuenta y crear tu contraseña."
+   #             )
+        #        return redirect("login")
+
+        #    except Exception:
+         #       logger.exception("Fallo enviando correo de activación a %s", user.email)
+
+          #      messages.warning(
+           #         request,
+            #        "✅ Cuenta creada, pero NO se pudo enviar el correo de activación. "
+             #       "Contacta al administrador para reenviar la activación."
+              #  )
+               # return redirect("login")
+
+#    else:
+ #       form = SelfRegisterForm()
+
+  #  return render(request, "registration/register.html", {
+   #     "form": form,
+    #    "sectors": Sector.objects.all().order_by("name"),
+   # })
+
+
 def register_member(request):
     """
     Registro público:
     - username = rut
-    - crea usuario INACTIVO
-    - envía correo de activación para crear contraseña
-    - si el correo falla, IGUAL deja el usuario creado (y se puede reenviar desde admin)
+    - crea usuario ACTIVO
+    - el usuario define su contraseña en el mismo registro
+    - NO se envía correo (temporal o definitivo)
     """
-
     if request.method == "POST":
         form = SelfRegisterForm(request.POST)
 
         if form.is_valid():
-            user = form.save()  # ✅ se crea sí o sí
-
             try:
-                _send_activation_email(request, user)
+                with transaction.atomic():
+                    user = form.save(commit=False)
 
-                messages.success(
-                    request,
-                    "✅ Registro recibido. Revisa tu correo para activar tu cuenta y crear tu contraseña."
-                )
+                    # ✅ set_password con password1 del form
+                    password = form.cleaned_data["password1"]
+                    user.set_password(password)
+
+                    # ✅ activo de inmediato (ya no hay activación por correo)
+                    user.is_active = True
+                    user.save()
+
+                    # si tu form tiene M2M, por si acaso:
+                    form.save_m2m()
+
+                messages.success(request, "✅ Cuenta creada. Ya puedes iniciar sesión.")
                 return redirect("login")
 
             except Exception:
-                logger.exception("Fallo enviando correo de activación a %s", user.email)
-
-                messages.warning(
-                    request,
-                    "✅ Cuenta creada, pero NO se pudo enviar el correo de activación. "
-                    "Contacta al administrador para reenviar la activación."
-                )
-                return redirect("login")
+                logger.exception("Error creando usuario en register_member")
+                messages.error(request, "❌ Ocurrió un error creando la cuenta. Intenta nuevamente.")
+                return redirect("register")
 
     else:
         form = SelfRegisterForm()
@@ -2613,7 +2658,6 @@ def register_member(request):
         "form": form,
         "sectors": Sector.objects.all().order_by("name"),
     })
-
 
 def _news_for_user_q(u):
     """
