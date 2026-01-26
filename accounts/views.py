@@ -107,6 +107,41 @@ def _get_users_in_scope(u):
     return qs.filter(group__zona__sector_id=sector_id).order_by("first_name", "last_name", "id")
 
 
+def visible_events_qs(user):
+    qs = Event.objects.all()
+
+    # No logueado: solo públicos
+    if not user.is_authenticated:
+        return qs.filter(visibility=Event.VIS_PUBLIC)
+
+    # Admin/directiva/superuser: todo
+    if user.is_superuser or user.role in {User.ROLE_ADMIN, User.ROLE_DIRECTIVA}:
+        return qs
+
+    # Rol y división efectiva
+    user_role = user.role
+    user_div = ""
+    if hasattr(user, "effective_division_for_menu"):
+        user_div = (user.effective_division_for_menu() or "").lower()
+    if not user_div:
+        user_div = (user.division or "").lower()
+
+    public_q = Q(visibility=Event.VIS_PUBLIC)
+
+    # Custom:
+    # (roles vacío OR contiene rol) AND (divs vacío OR contiene div)
+    custom_q = Q(visibility=Event.VIS_CUSTOM) & (
+        Q(target_roles=[]) | Q(target_roles__contains=[user_role])
+    )
+
+    if user_div:
+        custom_q = custom_q & (Q(target_divisions=[]) | Q(target_divisions__contains=[user_div]))
+    else:
+        # si el usuario no tiene división, solo permitir eventos sin filtro de división
+        custom_q = custom_q & Q(target_divisions=[])
+
+    return qs.filter(public_q | custom_q)
+
 def _event_visible_to_user(ev, u):
     # no logueado
     if not u.is_authenticated:
@@ -257,7 +292,7 @@ def home(request):
     end = today.replace(day=monthrange(today.year, today.month)[1])
 
     month_qs = (
-        Event.objects
+        visible_events_qs(u)
         .filter(date__range=[start, end])
         .order_by("date", "time", "title")
     )
@@ -1796,7 +1831,7 @@ def edit_event(request, event_id):
         ev.price = (request.POST.get("price") or "").strip()
         visibility = (request.POST.get("visibility") or Event.VIS_PUBLIC).strip()
         if visibility not in {Event.VIS_PUBLIC, Event.VIS_CUSTOM}:
-            visibility = Event.VIS_PUBLI
+            visibility = Event.VIS_PUBLIC
 
         target_roles = request.POST.getlist("target_roles")
         target_divisions = request.POST.getlist("target_divisions")
