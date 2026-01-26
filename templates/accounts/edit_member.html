@@ -27,6 +27,7 @@
   <div class="bg-white rounded-3xl shadow-md px-8 py-6 border border-gray-100">
     <h2 class="text-xl font-bold text-gray-800 mb-4">Datos</h2>
 
+    <!-- FORM PRINCIPAL: SOLO GUARDAR DATOS DEL USUARIO -->
     <form method="post" class="space-y-4">
       {% csrf_token %}
       <input type="hidden" name="action" value="save_user"/>
@@ -197,12 +198,138 @@
       </div>
 
       <div class="pt-2">
-        <button class="px-8 py-2 rounded-full bg-blue-600 text-white font-semibold hover:bg-blue-700">
+        <button type="submit"
+                class="px-8 py-2 rounded-full bg-blue-600 text-white font-semibold hover:bg-blue-700">
           Guardar cambios
         </button>
       </div>
 
     </form>
+    <!-- FIN FORM PRINCIPAL -->
+  </div>
+
+  <!-- HOGAR / FAMILIA (FUERA DEL FORM PRINCIPAL PARA EVITAR FORM ANIDADO) -->
+  <div class="bg-white rounded-3xl shadow-md px-8 py-6 border border-gray-100">
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <h2 class="text-xl font-bold text-gray-800">Hogar / Familia</h2>
+        <p class="text-sm text-gray-500">Crea hogar y agrega/quita miembros.</p>
+      </div>
+
+      {% if not household %}
+        <form method="post">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_household"/>
+          <button class="px-5 py-2 rounded-full bg-sky-700 text-white font-semibold hover:bg-sky-800">
+            Crear hogar
+          </button>
+        </form>
+      {% else %}
+        <div class="text-sm text-gray-600">
+          <span class="font-semibold">Hogar:</span> {{ household }}
+        </div>
+      {% endif %}
+    </div>
+
+    {% if household %}
+      <div class="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+        <!-- LISTA MIEMBROS -->
+        <div>
+          <h3 class="text-base font-bold text-gray-800 mb-3">Miembros del hogar</h3>
+
+          {% if memberships %}
+            <div class="space-y-2">
+              {% for m in memberships %}
+                <div class="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 px-4 py-3">
+                  <div class="text-sm">
+                    <div class="font-semibold text-gray-900">
+                      {{ m.user.first_name }} {{ m.user.last_name }}
+                      {% if m.is_primary %}
+                        <span class="ml-2 text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-800">Principal</span>
+                      {% endif %}
+                    </div>
+                    <div class="text-xs text-gray-500">
+                      {{ m.user.username }} • {{ m.get_relationship_display }}
+                    </div>
+                  </div>
+
+                  {% if not m.is_primary %}
+                    <form method="post">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="remove_from_household"/>
+                      <input type="hidden" name="membership_id" value="{{ m.id }}"/>
+                      <button class="px-4 py-2 rounded-xl border border-red-200 text-red-700 hover:bg-red-50 text-sm font-semibold">
+                        Quitar
+                      </button>
+                    </form>
+                  {% else %}
+                    <span class="text-xs text-gray-400">No se puede quitar</span>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="text-sm text-gray-500">No hay miembros en este hogar.</p>
+          {% endif %}
+        </div>
+
+        <!-- AGREGAR MIEMBROS -->
+        <div>
+          <h3 class="text-base font-bold text-gray-800 mb-3">Agregar miembro</h3>
+
+          <form method="get" class="flex gap-2 mb-4">
+            <input name="q" value="{{ q }}" placeholder="Buscar por username / nombre / apellido"
+                   class="w-full rounded-2xl border border-gray-200 px-4 py-2 text-sm"/>
+            <button type="submit"
+                    class="px-4 py-2 rounded-2xl border font-semibold text-sm hover:bg-gray-50">
+              Buscar
+            </button>
+          </form>
+
+          {% if q and candidates %}
+            <div class="space-y-2">
+              {% for c in candidates %}
+                <form method="post" class="rounded-2xl border border-gray-200 px-4 py-3">
+                  {% csrf_token %}
+                  <input type="hidden" name="action" value="add_to_household"/>
+                  <input type="hidden" name="add_user_id" value="{{ c.id }}"/>
+
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="text-sm">
+                      <div class="font-semibold text-gray-900">{{ c.first_name }} {{ c.last_name }}</div>
+                      <div class="text-xs text-gray-500">{{ c.username }}</div>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                      <select name="relationship" class="rounded-xl border border-gray-200 px-3 py-2 text-sm">
+                        {% for val, label in rel_choices %}
+                          <option value="{{ val }}">{{ label }}</option>
+                        {% endfor %}
+                      </select>
+
+                      <button type="submit"
+                              class="px-4 py-2 rounded-xl bg-green-600 text-white font-semibold text-sm hover:bg-green-700">
+                        Agregar
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              {% endfor %}
+            </div>
+          {% elif q %}
+            <p class="text-sm text-gray-500">Sin resultados para “{{ q }}”.</p>
+          {% else %}
+            <p class="text-sm text-gray-500">Busca un usuario para agregarlo al hogar.</p>
+          {% endif %}
+
+          <p class="text-xs text-gray-400 mt-3">
+            * Si el usuario ya pertenece a otro hogar, el sistema lo rechazará (como en tu view).
+          </p>
+        </div>
+
+      </div>
+    {% endif %}
   </div>
 
 </div>
@@ -292,7 +419,9 @@
   const wrap = document.getElementById("nationalDivisionWrap");
   const select = document.getElementById("nationalDivisionSelect");
   const error = document.getElementById("nationalDivisionError");
-  const form = document.querySelector('form[method="post"]');
+
+  // OJO: este form ahora sí es solo el principal
+  const form = document.querySelector('form[method="post"] input[name="action"][value="save_user"]')?.closest('form');
 
   if (!leader || !vice || !wrap || !select || !form) return;
 
