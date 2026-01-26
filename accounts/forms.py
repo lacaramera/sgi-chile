@@ -3,6 +3,8 @@ from django.contrib.auth.forms import UserCreationForm, SetPasswordForm
 from django.core.exceptions import ValidationError
 from .models import User, Household, HouseholdMember, Grupo
 from .utils import normalize_rut, is_valid_rut_format
+from django.contrib.auth.password_validation import validate_password
+
 class UserRegisterForm(UserCreationForm):
     email = forms.EmailField(required=True)
     role = forms.ChoiceField(choices=User.ROLE_CHOICES)

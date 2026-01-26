@@ -2621,13 +2621,12 @@ def register_member(request):
     - username = rut
     - crea usuario ACTIVO
     - el usuario define su contraseña en el mismo registro
-    - NO se envía correo (temporal o definitivo)
+    - NO se envía correo
     """
-
     if request.method == "POST":
         form = SelfRegisterForm(request.POST)
 
-        # ✅ Log básico de entrada (sin passwords)
+        # ✅ log básico (sin passwords)
         logger.info(
             "POST register_member: rut=%s email=%s group=%s",
             request.POST.get("rut"),
@@ -2635,64 +2634,33 @@ def register_member(request):
             request.POST.get("group"),
         )
 
-        if form.is_valid():
-            try:
-                with transaction.atomic():
-                    user = form.save(commit=False)
-
-                    # ✅ Password desde password1 del form
-                    password = form.cleaned_data.get("password1")
-                    if not password:
-                        # Esto NO debería pasar si el form está bien
-                        raise ValueError("password1 viene vacío en cleaned_data")
-
-                    user.set_password(password)
-
-                    # ✅ Activo de inmediato
-                    user.is_active = True
-
-                    user.save()
-                    form.save_m2m()
-
-                logger.info("✅ Usuario creado OK: id=%s username=%s email=%s", user.id, user.username, user.email)
-
-                messages.success(request, "✅ Cuenta creada. Ya puedes iniciar sesión.")
-                return redirect("login")
-
-            except IntegrityError as e:
-                logger.exception("❌ IntegrityError creando usuario (probable duplicado): %s", str(e))
-                messages.error(request, "❌ Ya existe un usuario con esos datos (RUT o correo).")
-                return redirect("register")
-
-            except Exception as e:
-                # ✅ Log completo del error
-                logger.exception("❌ Error creando usuario en register_member: %s", str(e))
-
-                # ✅ Log extra con datos del form (útil para 500)
-                try:
-                    logger.error("Form cleaned_data keys: %s", list(getattr(form, "cleaned_data", {}).keys()))
-                    logger.error("Form errors: %s", form.errors)
-                except Exception:
-                    logger.exception("No se pudo loguear cleaned_data/errors del form")
-
-                # Si quisieras ver el error exacto solo en DEBUG:
-                if getattr(settings, "DEBUG", False):
-                    messages.error(request, f"❌ Error interno: {e}")
-                else:
-                    messages.error(request, "❌ Ocurrió un error creando la cuenta. Intenta nuevamente.")
-
-                return redirect("register")
-
-        else:
-            # ✅ Log FORZADO de errores del form (esto te debería aparecer en Railway logs)
-            logger.warning("❌ Form inválido en register_member: %s", form.errors)
-
-            # Para que el usuario vea errores y no se “reinicie” sin explicación,
-            # no redirigimos: renderizamos con los errores.
+        if not form.is_valid():
+            logger.warning("❌ Form inválido register_member: %s", form.errors.as_json())
             return render(request, "registration/register.html", {
                 "form": form,
                 "sectors": Sector.objects.all().order_by("name"),
             })
+
+        try:
+            with transaction.atomic():
+                user = form.save()  # ✅ el form ya setea password + is_active + username=rut
+
+            logger.info("✅ Usuario creado OK: id=%s username=%s email=%s", user.id, user.username, user.email)
+            messages.success(request, "✅ Cuenta creada. Ya puedes iniciar sesión.")
+            return redirect("login")
+
+        except IntegrityError as e:
+            logger.exception("❌ IntegrityError creando usuario: %s", str(e))
+            messages.error(request, "❌ Ya existe un usuario con ese RUT o correo.")
+            return redirect("register")
+
+        except Exception as e:
+            logger.exception("🔥 Error creando usuario en register_member: %s", str(e))
+            if getattr(settings, "DEBUG", False):
+                messages.error(request, f"❌ Error interno: {e}")
+            else:
+                messages.error(request, "❌ Ocurrió un error creando la cuenta. Intenta nuevamente.")
+            return redirect("register")
 
     else:
         form = SelfRegisterForm()
