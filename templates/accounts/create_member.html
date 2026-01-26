@@ -17,13 +17,12 @@
     {% csrf_token %}
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <div>
-        <label class="text-sm font-semibold">Username</label>
-        {{ form.username }}
-      </div>
-      <div>
+
+      <!-- ✅ SOLO RUT (y será también el username) -->
+      <div class="md:col-span-2">
         <label class="text-sm font-semibold">RUT</label>
         {{ form.rut }}
+        <p class="text-xs text-gray-500 mt-1">* El RUT será usado como username.</p>
       </div>
 
       <div>
@@ -44,7 +43,6 @@
         <label class="text-sm font-semibold">Fecha de nacimiento</label>
         {{ form.birth_date }}
       </div>
-
 
       <div class="md:col-span-2">
         <label class="text-sm font-semibold">Dirección (opcional)</label>
@@ -70,24 +68,33 @@
         {{ form.division }}
       </div>
 
+      <!-- ✅ RN / Vice con IDs -->
       <div class="flex items-center gap-2 mt-6">
-        {{ form.is_division_national_leader }}
+        <input id="is_division_national_leader" type="checkbox"
+               name="{{ form.is_division_national_leader.name }}"
+               {% if form.is_division_national_leader.value %}checked{% endif %}
+               class="h-4 w-4"/>
         <span class="text-sm">Responsable nacional</span>
       </div>
 
       <div class="flex items-center gap-2 mt-6">
-        {{ form.is_division_national_vice }}
+        <input id="is_division_national_vice" type="checkbox"
+               name="{{ form.is_division_national_vice.name }}"
+               {% if form.is_division_national_vice.value %}checked{% endif %}
+               class="h-4 w-4"/>
         <span class="text-sm">Vice responsable nacional</span>
       </div>
 
-      <div class="md:col-span-2">
+      <div class="md:col-span-2" id="nationalDivisionWrap">
         <label class="text-sm font-semibold">División nacional que lidera</label>
         {{ form.national_division }}
         <p class="text-xs text-gray-500 mt-1">
           * Solo aplica si marcaste Responsable/Vice nacional.
         </p>
+        <div id="nationalDivisionError" class="hidden mt-2 text-xs font-semibold text-red-600">
+          Debes elegir la división nacional.
+        </div>
       </div>
-
 
       <div class="flex items-center gap-2 mt-6">
         {{ form.is_active }}
@@ -116,7 +123,6 @@
 
       <div>
         <label class="text-sm font-semibold">Grupo</label>
-        <!-- IMPORTANTE: name="group" (es el field real del ModelForm) -->
         <select name="group" id="grupoSelect" class="w-full border border-gray-200 rounded-2xl px-4 py-2 text-sm" disabled>
           <option value="">— Selecciona grupo —</option>
         </select>
@@ -144,6 +150,9 @@
 
 <script>
 (function(){
+  // ======================
+  // 1) Cascada sector/zona/grupo
+  // ======================
   const sectorSelect = document.getElementById("sectorSelect");
   const zonaSelect = document.getElementById("zonaSelect");
   const grupoSelect = document.getElementById("grupoSelect");
@@ -186,6 +195,47 @@
         grupoSelect.disabled = false;
       });
   });
+
+  // ======================
+  // 2) RN/Vice: toggle + validar
+  // ======================
+  const leader = document.getElementById("is_division_national_leader");
+  const vice = document.getElementById("is_division_national_vice");
+  const wrap = document.getElementById("nationalDivisionWrap");
+  const select = document.getElementById("id_national_division"); // Django default id_
+  const error = document.getElementById("nationalDivisionError");
+  const form = document.querySelector('form[method="post"]');
+
+  if (!leader || !vice || !wrap || !select || !form) return;
+
+  function syncNational(){
+    const on = leader.checked || vice.checked;
+    wrap.style.display = on ? "" : "none";
+    if (!on) {
+      select.value = "";
+      if (error) error.classList.add("hidden");
+    }
+  }
+
+  leader.addEventListener("change", () => {
+    if (leader.checked) vice.checked = false;
+    syncNational();
+  });
+
+  vice.addEventListener("change", () => {
+    if (vice.checked) leader.checked = false;
+    syncNational();
+  });
+
+  form.addEventListener("submit", (e) => {
+    if ((leader.checked || vice.checked) && !select.value) {
+      e.preventDefault();
+      if (error) error.classList.remove("hidden");
+      select.focus();
+    }
+  });
+
+  syncNational();
 })();
 </script>
 

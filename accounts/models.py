@@ -9,7 +9,6 @@ from django.contrib.auth import get_user_model
 
 
 
-
 class User(AbstractUser):
     first_name = models.CharField("nombre", max_length=150, blank=False)
     last_name = models.CharField("apellido", max_length=150, blank=False)
@@ -45,6 +44,10 @@ class User(AbstractUser):
     DIV_CABALLEROS = "caballeros"
     DIV_DAMAS = "damas"
 
+    # ✅ SOLO para liderazgo nacional (Sucesores)
+    DIV_DS = "ds"
+
+    # ✅ PERTENENCIA: NO incluye DS
     DIVISION_CHOICES = [
         (DIV_DJM, "División Juvenil Masculina (DJM)"),
         (DIV_DJF, "División Juvenil Femenina (DJF)"),
@@ -61,7 +64,7 @@ class User(AbstractUser):
     )
 
     # -------------------------
-    # Rol nacional por división
+    # Liderazgo nacional
     # -------------------------
     is_division_national_leader = models.BooleanField(
         "Responsable nacional de división",
@@ -73,13 +76,22 @@ class User(AbstractUser):
         default=False,
     )
 
+    # ✅ LIDERAZGO NACIONAL: incluye DS
+    NATIONAL_DIVISION_CHOICES = [
+        (DIV_DJM, "División Juvenil Masculina (DJM)"),
+        (DIV_DJF, "División Juvenil Femenina (DJF)"),
+        (DIV_CABALLEROS, "División Caballeros"),
+        (DIV_DAMAS, "División Damas"),
+        (DIV_DS, "División de Sucesores (DS)"),
+    ]
+
     national_division = models.CharField(
         "División nacional que lidera",
         max_length=20,
-        choices=DIVISION_CHOICES,
+        choices=NATIONAL_DIVISION_CHOICES,
         blank=True,
         null=True,
-        help_text="Si es responsable/vice nacional, indica qué división lidera (DJM/DJF/Caballeros/Damas).",
+        help_text="Si es responsable/vice nacional, indica qué división lidera (incluye DS).",
     )
 
     # (opcional)
@@ -140,10 +152,9 @@ class User(AbstractUser):
 
     # --- Admin / Directiva ---
     def is_admin_sistema(self):
-        # superuser de Django o admin/directiva
         return self.is_superuser or self.role in {self.ROLE_ADMIN, self.ROLE_DIRECTIVA}
 
-    # ✅ Método (NO property): así nunca aparece "'bool' object is not callable"
+    # ✅ Método (NO property) para evitar "'bool' object is not callable"
     def is_admin_like(self):
         return self.is_admin_sistema()
 
@@ -181,7 +192,7 @@ class User(AbstractUser):
         """
         division_key = (division_key or "").lower()
 
-        if self.is_admin_like():  # ✅ CON ()
+        if self.is_admin_like():
             return True
 
         eff = self.effective_division_for_menu()
@@ -195,7 +206,7 @@ class User(AbstractUser):
         """
         division_key = (division_key or "").lower()
 
-        if self.is_admin_like():  # ✅ CON ()
+        if self.is_admin_like():
             return True
 
         if self.is_national_division_role():
@@ -219,6 +230,7 @@ class User(AbstractUser):
         if self.group_id and self.group and self.group.zona_id and self.group.zona and self.group.zona.sector_id:
             return self.group.zona.sector
         return None
+
 
 class Sector(models.Model):
     name = models.CharField(max_length=120, unique=True)

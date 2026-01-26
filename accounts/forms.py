@@ -1,9 +1,11 @@
 from django import forms
-from django.contrib.auth.forms import UserCreationForm, SetPasswordForm
 from django.core.exceptions import ValidationError
+from django.contrib.auth.forms import UserCreationForm, SetPasswordForm
+from django.contrib.auth.password_validation import validate_password
+
 from .models import User, Household, HouseholdMember, Grupo
 from .utils import normalize_rut, is_valid_rut_format
-from django.contrib.auth.password_validation import validate_password
+
 
 class UserRegisterForm(UserCreationForm):
     email = forms.EmailField(required=True)
@@ -11,20 +13,20 @@ class UserRegisterForm(UserCreationForm):
 
     class Meta:
         model = User
-        fields = ('username','email','first_name','last_name','role','password1','password2')
+        fields = ("username", "email", "first_name", "last_name", "role", "password1", "password2")
+
 
 class MemberCreateForm(UserCreationForm):
     class Meta:
         model = User
         fields = (
-            "username", "rut", "first_name", "last_name", "email",
-            "role", "is_active","birth_date",
+            "rut", "first_name", "last_name", "email",
+            "role", "is_active", "birth_date",
             "address", "join_date", "is_only_family_member",
-            "group","division",
+            "group", "division",
             "is_division_national_leader",
             "is_division_national_vice",
             "national_division",
-
         )
         widgets = {
             "join_date": forms.DateInput(attrs={"type": "date"}),
@@ -35,26 +37,91 @@ class MemberCreateForm(UserCreationForm):
         super().__init__(*args, **kwargs)
 
         # placeholders
-        self.fields["username"].widget.attrs.update({"placeholder": "Username (ej: miguel.perez o 12345678-9)"})
-        self.fields["rut"].widget.attrs.update({"placeholder": "RUT (ej: 12345678-9)"})
+        self.fields["rut"].widget.attrs.update({"placeholder": "RUT (ej: 12345678-9, sin puntos)"})
         self.fields["first_name"].widget.attrs.update({"placeholder": "Nombre"})
         self.fields["last_name"].widget.attrs.update({"placeholder": "Apellido"})
         self.fields["email"].widget.attrs.update({"placeholder": "Correo (opcional)"})
         self.fields["address"].widget.attrs.update({"placeholder": "Dirección (opcional)"})
 
+        # ✅ asegurar choices correctas
+        self.fields["division"].choices = [("", "— Selecciona —")] + list(User.DIVISION_CHOICES)
+        self.fields["national_division"].choices = [("", "— Selecciona —")] + list(User.NATIONAL_DIVISION_CHOICES)
+
         # importantísimo: el form debe aceptar cualquier grupo para validar lo que el JS setea
         self.fields["group"].queryset = Grupo.objects.select_related("zona__sector").all()
 
-        # estilos (para que se vea igual SGI)
+        # estilos
+        css = "w-full border border-gray-200 rounded-2xl px-4 py-2 text-sm"
         for name, f in self.fields.items():
-            if name in ("is_active", "is_only_family_member"):
+            if name in (
+                "is_active",
+                "is_only_family_member",
+                "is_division_national_leader",
+                "is_division_national_vice",
+            ):
                 continue
-            css = "w-full border border-gray-200 rounded-2xl px-4 py-2 text-sm"
             f.widget.attrs.update({"class": css})
 
         # checkboxes
         self.fields["is_active"].widget.attrs.update({"class": "h-4 w-4"})
         self.fields["is_only_family_member"].widget.attrs.update({"class": "h-4 w-4"})
+        self.fields["is_division_national_leader"].widget.attrs.update({"class": "h-4 w-4"})
+        self.fields["is_division_national_vice"].widget.attrs.update({"class": "h-4 w-4"})
+
+    def clean_rut(self):
+        rut_raw = (self.cleaned_data.get("rut") or "").strip()
+        rut = normalize_rut(rut_raw)
+
+        if not is_valid_rut_format(rut):
+            raise ValidationError("RUT inválido. Usa formato 12345678-9 (sin puntos).")
+
+        if User.objects.filter(rut=rut).exists():
+            raise ValidationError("Ya existe una cuenta con este RUT.")
+
+        # username también será el rut
+        if User.objects.filter(username=rut).exists():
+            raise ValidationError("Ya existe una cuenta con este RUT.")
+
+        return rut
+
+    def clean(self):
+        cleaned = super().clean()
+
+        leader = cleaned.get("is_division_national_leader")
+        vice = cleaned.get("is_division_national_vice")
+        nat_div = cleaned.get("national_division")
+
+        # no permitir ambos
+        if leader and vice:
+            self.add_error("is_division_national_vice", "No puedes marcar Responsable y Vice a la vez.")
+
+        # si marca RN/Vice -> exige división nacional
+        if (leader or vice) and not nat_div:
+            self.add_error("national_division", "Debes elegir la división nacional que lidera (incluye DS).")
+
+        # si NO marca RN/Vice -> limpia el campo
+        if not (leader or vice):
+            cleaned["national_division"] = None
+
+        return cleaned
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+
+        # ✅ normalizar rut y usarlo como username
+        user.rut = normalize_rut(user.rut)
+        user.username = user.rut
+
+        # seguridad: si NO es RN/Vice, limpiar national_division
+        if not (user.is_division_national_leader or user.is_division_national_vice):
+            user.national_division = None
+
+        if commit:
+            user.save()
+            self.save_m2m()
+
+        return user
+
 
 class MemberEditForm(forms.ModelForm):
     household = forms.ModelChoiceField(
@@ -70,13 +137,35 @@ class MemberEditForm(forms.ModelForm):
 
     class Meta:
         model = User
-        fields = ["first_name", "last_name", "email", "role", "is_active","division",
-        "is_division_national_leader",
-        "is_division_national_vice",
-        "national_division",]
+        fields = (
+            "first_name",
+            "last_name",
+            "email",
+            "role",
+            "is_active",
+            "division",
+            "is_division_national_leader",
+            "is_division_national_vice",
+            "national_division",
+        )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        # ✅ asegurar choices correctas
+        self.fields["division"].choices = [("", "— Selecciona —")] + list(User.DIVISION_CHOICES)
+        self.fields["national_division"].choices = [("", "— Selecciona —")] + list(User.NATIONAL_DIVISION_CHOICES)
+
+        css = "w-full border border-gray-200 rounded-2xl px-4 py-2 text-sm"
+        for name, f in self.fields.items():
+            if name in ("is_active", "is_division_national_leader", "is_division_national_vice"):
+                continue
+            f.widget.attrs.update({"class": css})
+
+        self.fields["is_active"].widget.attrs.update({"class": "h-4 w-4"})
+        self.fields["is_division_national_leader"].widget.attrs.update({"class": "h-4 w-4"})
+        self.fields["is_division_national_vice"].widget.attrs.update({"class": "h-4 w-4"})
+
         # precargar household si existe
         if self.instance and self.instance.pk:
             try:
@@ -86,6 +175,23 @@ class MemberEditForm(forms.ModelForm):
             except Exception:
                 pass
 
+    def clean(self):
+        cleaned = super().clean()
+
+        leader = cleaned.get("is_division_national_leader")
+        vice = cleaned.get("is_division_national_vice")
+        nat_div = cleaned.get("national_division")
+
+        if leader and vice:
+            self.add_error("is_division_national_vice", "No puedes marcar Responsable y Vice a la vez.")
+
+        if (leader or vice) and not nat_div:
+            self.add_error("national_division", "Debes elegir la división nacional que lidera (incluye DS).")
+
+        if not (leader or vice):
+            cleaned["national_division"] = None
+
+        return cleaned
 
 
 class SelfRegisterForm(forms.ModelForm):
@@ -128,7 +234,6 @@ class SelfRegisterForm(forms.ModelForm):
             "address",
             "division",
             "group",
-            # OJO: password1/password2 NO van aquí porque no son del modelo
         )
         widgets = {
             "birth_date": forms.DateInput(attrs={"type": "date"}),
@@ -138,27 +243,22 @@ class SelfRegisterForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # placeholders
         self.fields["rut"].widget.attrs.update({"placeholder": "RUT (ej: 12345678-9, sin puntos)"})
         self.fields["first_name"].widget.attrs.update({"placeholder": "Nombre"})
         self.fields["last_name"].widget.attrs.update({"placeholder": "Apellido"})
         self.fields["email"].widget.attrs.update({"placeholder": "Correo"})
         self.fields["address"].widget.attrs.update({"placeholder": "Dirección (opcional)"})
 
-        # ✅ el JS setea group por cascada, entonces el form debe aceptar cualquier grupo
         self.fields["group"].queryset = Grupo.objects.select_related("zona__sector").all()
 
-        # Reglas (ajusta si quieres)
         self.fields["division"].required = True
         self.fields["group"].required = True
         self.fields["join_date"].required = False
 
-        # estilos (mismo look SGI)
         css = "w-full border border-gray-200 rounded-2xl px-4 py-2 text-sm"
         for name, f in self.fields.items():
             f.widget.attrs.update({"class": css})
 
-        # estilo a passwords (también)
         self.fields["password1"].widget.attrs.update({"class": css})
         self.fields["password2"].widget.attrs.update({"class": css})
 
@@ -171,8 +271,10 @@ class SelfRegisterForm(forms.ModelForm):
 
         if User.objects.filter(rut=rut).exists():
             raise ValidationError("Ya existe una cuenta con este RUT.")
+
         if User.objects.filter(username=rut).exists():
             raise ValidationError("Ya existe una cuenta con este RUT.")
+
         return rut
 
     def clean_email(self):
@@ -191,44 +293,35 @@ class SelfRegisterForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+
         p1 = cleaned.get("password1")
         p2 = cleaned.get("password2")
         if p1 and p2 and p1 != p2:
             self.add_error("password2", "Las contraseñas no coinciden.")
+
         return cleaned
 
     def save(self, commit=True):
         user = super().save(commit=False)
 
-        # normalizar RUT
         user.rut = normalize_rut(user.rut)
-
-        # username SIEMPRE = rut
         user.username = user.rut
 
-        # seguridad: NO permitir que se autoasignen permisos
-        user.role = User.ROLE_MIEMBRO
-        user.is_superuser = False
-        user.is_staff = False
-
-        # flags nacionales limpias
+        # registro público: NO es RN/Vice
         user.is_division_national_leader = False
         user.is_division_national_vice = False
         user.national_division = None
 
-        # ✅ activo inmediatamente (ya no hay activación por correo)
+        # se activa inmediatamente (como dijiste)
         user.is_active = True
 
-        # ✅ setear contraseña elegida por el usuario
-        password = self.cleaned_data.get("password1")
-        user.set_password(password)
-
         if commit:
+            user.set_password(self.cleaned_data["password1"])
             user.save()
             self.save_m2m()
 
         return user
-    
+
 
 class ActivationSetPasswordForm(SetPasswordForm):
     """
@@ -243,6 +336,5 @@ class ActivationSetPasswordForm(SetPasswordForm):
         for f in self.fields.values():
             f.widget.attrs.update({"class": css})
 
-        # placeholders (opcional, ayuda mucho)
         self.fields["new_password1"].widget.attrs.update({"placeholder": "Nueva contraseña"})
         self.fields["new_password2"].widget.attrs.update({"placeholder": "Repite la contraseña"})
