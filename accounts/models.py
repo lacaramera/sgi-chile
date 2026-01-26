@@ -269,7 +269,7 @@ class HouseholdMember(models.Model):
     REL_OTHER = "other"
 
     REL_CHOICES = [
-        (REL_HEAD, "Jefe/a de hogar"),
+        (REL_HEAD, "Titular del Gohonzon"),
         (REL_SPOUSE, "Esposo/a"),
         (REL_CHILD, "Hijo/a"),
         (REL_SIBLING, "Hermano/a"),
