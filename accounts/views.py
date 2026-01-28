@@ -288,93 +288,24 @@ def home(request):
     # -------------------------------------------------
     # EVENTOS DEL MES
     # -------------------------------------------------
+    # -------------------------------------------------
+    # EVENTOS DEL MES (filtrado seguro)
+    # -------------------------------------------------
     start = today.replace(day=1)
     end = today.replace(day=monthrange(today.year, today.month)[1])
 
+    # Traer candidatos del mes (sin filtros raros)
     month_qs = (
-        visible_events_qs(u)
+        Event.objects
         .filter(date__range=[start, end])
         .order_by("date", "time", "title")
     )
 
-    if not u.is_authenticated:
-        upcoming = month_qs.filter(visibility=Event.VIS_PUBLIC)[:20]
-
-    else:
-        is_admin_like = (
-            u.is_superuser
-            or u.role in {u.ROLE_ADMIN, u.ROLE_DIRECTIVA}
-        )
-
-        if is_admin_like:
-            upcoming = month_qs[:20]
-
-        else:
-            user_role = u.role
-            user_div = (u.effective_division_for_menu() or "").lower()
-            user_div2 = (
-                (u.division or "").lower()
-                if getattr(u, "division", None)
-                else ""
-            )
-
-            # 🔹 SQLITE → filtrar en Python
-            if connection.vendor == "sqlite":
-                candidates = list(month_qs[:300])
-                upcoming = [
-                    ev for ev in candidates
-                    if _event_visible_to_user(ev, u)
-                ][:20]
-
-            # 🔹 POSTGRES (producción)
-            else:
-                roles_q = Q()
-                divs_q = Q()
-
-                # si hay roles: debe contener el rol del usuario
-                roles_q = Q(target_roles__contains=[user_role])
-
-                # si hay divisiones: debe contener alguna división del usuario
-                divs_q = Q()
-                if user_div:
-                    divs_q |= Q(target_divisions__contains=[user_div])
-                if user_div2:
-                    divs_q |= Q(target_divisions__contains=[user_div2])
-
-                visible_q = (
-                    Q(visibility=Event.VIS_PUBLIC)
-                    |
-                    (
-                        Q(visibility=Event.VIS_CUSTOM)
-                        &
-                        (
-                            # ✅ Caso 1: evento tiene roles y divisiones -> AND
-                            (
-                                Q(target_roles__len__gt=0) &
-                                Q(target_divisions__len__gt=0) &
-                                roles_q &
-                                divs_q
-                            )
-                            |
-                            # ✅ Caso 2: evento tiene SOLO roles
-                            (
-                                Q(target_roles__len__gt=0) &
-                                Q(target_divisions__len=0) &
-                                roles_q
-                            )
-                            |
-                            # ✅ Caso 3: evento tiene SOLO divisiones
-                            (
-                                Q(target_roles__len=0) &
-                                Q(target_divisions__len__gt=0) &
-                                divs_q
-                            )
-                        )
-                    )
-                )
+    # Filtrar visibilidad en Python (funciona igual en SQLite y Postgres)
+    candidates = list(month_qs[:500])  # 500 sobrado para un mes
+    upcoming = [ev for ev in candidates if _event_visible_to_user(ev, u)][:20]
 
 
-                upcoming = month_qs.filter(visible_q)[:20]
 
     # -------------------------------------------------
     # FECHAS IMPORTANTES
